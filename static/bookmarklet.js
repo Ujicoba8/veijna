@@ -9,13 +9,22 @@
   let playerColor = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
   let isAnalyzing = false;
 
+  // ── Load chess.js untuk parse move history ─────────────
+  function loadChessJs(cb) {
+    if (window.Chess) { cb(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js';
+    s.onload = cb;
+    document.head.appendChild(s);
+  }
+
   // ── CSS ────────────────────────────────────────────────
   const style = document.createElement('style');
   style.textContent = `
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Rajdhani:wght@600;700&display=swap');
     #hch-panel {
       position: fixed; top: 20px; right: 20px;
-      width: 270px; z-index: 999999;
+      width: 280px; z-index: 999999;
       background: #0d0d0d;
       border: 1px solid #c9a84c;
       border-radius: 10px;
@@ -66,6 +75,8 @@
     .hch-sc.eq  { color: #ffc107; }
     .hch-sc.los { color: #f44336; }
     .hch-sc.mat { color: #ce93d8; font-size: 10px; }
+    .hch-turn { font-family:'Space Mono',monospace; font-size:10px; color:#666; text-align:center; margin-bottom:6px; }
+    .hch-turn strong { color: #c9a84c; }
     .hch-footer { border-top: 1px solid #1a1a1a; padding-top: 8px; display: flex; align-items: center; justify-content: space-between; }
     .hch-color-lbl { font-family:'Space Mono',monospace; font-size: 10px; color: #555; }
     .hch-color-lbl strong { color: #c9a84c; }
@@ -93,8 +104,9 @@
     <div class="hch-body" id="hch-body">
       <div class="hch-status">
         <span class="hch-dot" id="hch-dot"></span>
-        <span id="hch-status-txt">Connecting...</span>
+        <span id="hch-status-txt">Loading...</span>
       </div>
+      <div class="hch-turn" id="hch-turn"></div>
       <div class="hch-moves" id="hch-moves">
         <div class="hch-empty">Waiting...</div>
       </div>
@@ -138,7 +150,13 @@
     dot.className = 'hch-dot' + (state==='on'?' on':state==='thinking'?' thinking':'');
   }
 
-  function renderMoves(moves) {
+  function renderMoves(moves, turn) {
+    const turnEl = document.getElementById('hch-turn');
+    const isMyTurn = turn === playerColor;
+    turnEl.innerHTML = isMyTurn
+      ? `<strong>Your turn</strong> — best moves:`
+      : `Opponent's turn — preparing...`;
+
     const el = document.getElementById('hch-moves');
     if (!moves || !moves.length) { el.innerHTML = '<div class="hch-empty">No moves found</div>'; return; }
     el.innerHTML = moves.map((m,i) => {
@@ -151,19 +169,37 @@
         <span class="hch-sc ${scClass}">${sc}</span>
       </div>`;
     }).join('');
-    setStatus('Analysis complete ✓', 'on');
+    setStatus(isMyTurn ? 'Your move! ✓' : 'Waiting opponent...', 'on');
   }
 
-  // ── FEN Detection ──────────────────────────────────────
-  function detectFen() {
-    // Auto-detect warna tiap kali
-    const detected = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
-    if (detected !== playerColor) {
-      playerColor = detected;
-      document.getElementById('hch-color-lbl').textContent = playerColor === 'w' ? 'White ♔' : 'Black ♚';
-      currentFen = '';
-    }
+  // ── Get FEN from move history (accurate!) ──────────────
+  function getFenFromHistory() {
+    if (!window.Chess) return null;
+    try {
+      const histEl = document.querySelector('[class*="move-history"], [class*="moveHistory"], [class*="history"]');
+      if (!histEl) return null;
+      const text = histEl.textContent || '';
 
+      // Extract moves: "1. e4 c5 2. d4 cxd4"
+      const moveMatches = text.match(/\d+\.\s*(\S+)(?:\s+(\S+))?/g);
+      if (!moveMatches) return null;
+
+      const chess = new Chess();
+      for (const match of moveMatches) {
+        const parts = match.replace(/\d+\./, '').trim().split(/\s+/);
+        for (const move of parts) {
+          if (!move || move === '...' || move.match(/^\d+$/)) continue;
+          try { chess.move(move); } catch(e) { break; }
+        }
+      }
+      return chess.fen();
+    } catch(e) {
+      return null;
+    }
+  }
+
+  // ── FEN from DOM squares ────────────────────────────────
+  function getFenFromDOM(turn = 'w') {
     const squares = document.querySelectorAll('[data-square]');
     if (!squares.length) return null;
 
@@ -194,14 +230,43 @@
       if (e) row += e;
       fen += row + (r < 7 ? '/' : '');
     }
-    return fen + ' ' + playerColor + ' KQkq - 0 1';
+    return fen + ' ' + turn + ' KQkq - 0 1';
+  }
+
+  // ── Detect FEN + turn ──────────────────────────────────
+  function detectPosition() {
+    // Auto-detect player color
+    const detected = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
+    if (detected !== playerColor) {
+      playerColor = detected;
+      document.getElementById('hch-color-lbl').textContent = playerColor === 'w' ? 'White ♔' : 'Black ♚';
+      currentFen = '';
+    }
+
+    // Try get FEN from move history (most accurate)
+    const fenFromHistory = getFenFromHistory();
+    if (fenFromHistory) {
+      const turn = fenFromHistory.split(' ')[1];
+      return { fen: fenFromHistory, turn };
+    }
+
+    // Fallback: count moves to determine turn
+    const histEl = document.querySelector('[class*="move-history"], [class*="moveHistory"], [class*="history"]');
+    const histText = histEl ? histEl.textContent : '';
+    const moveCount = (histText.match(/\d+\./g) || []).length;
+    const halfMoves = histText.trim().split(/\s+/).filter(s => s && !s.match(/^\d+\./) && s !== 'Move' && s !== 'History:' && s !== 'No' && s !== 'moves' && s !== 'yet').length;
+    const turn = halfMoves % 2 === 0 ? 'w' : 'b';
+
+    const fen = getFenFromDOM(turn);
+    return fen ? { fen, turn } : null;
   }
 
   // ── Analysis ───────────────────────────────────────────
   async function triggerAnalysis() {
     if (isAnalyzing) return;
-    const fen = detectFen();
-    if (!fen) { setStatus('Board not detected', 'idle'); return; }
+    const pos = detectPosition();
+    if (!pos) { setStatus('Board not detected', 'idle'); return; }
+    const { fen, turn } = pos;
     if (fen === currentFen) return;
     currentFen = fen;
 
@@ -215,7 +280,7 @@
         body: JSON.stringify({ fen, movetime: 200 })
       });
       const data = await res.json();
-      renderMoves(data.moves);
+      renderMoves(data.moves, turn);
     } catch(err) {
       setStatus('Server error ✗', 'idle');
     } finally {
@@ -223,11 +288,12 @@
     }
   }
 
-  // ── Polling setiap 1 detik ─────────────────────────────
-  setInterval(triggerAnalysis, 200);
-
-  setStatus('Connected ✓', 'on');
-  setTimeout(triggerAnalysis, 200);
+  // ── Init ───────────────────────────────────────────────
+  loadChessJs(() => {
+    setStatus('Connected ✓', 'on');
+    setInterval(triggerAnalysis, 200);
+    setTimeout(triggerAnalysis, 200);
+  });
 
   console.log('[HCH] Loaded ✓');
 })();
