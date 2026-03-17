@@ -13,14 +13,8 @@ app.use(express.static(path.join(__dirname, 'static')));
 
 function analyzeWithStockfish(fen, multiPV = 3, moveTime = 200) {
   return new Promise((resolve, reject) => {
-    let sfPath;
-    try { sfPath = require.resolve('stockfish/src/stockfish.js'); }
-    catch { try { sfPath = require.resolve('stockfish'); }
-    catch { return reject(new Error('Stockfish not found')); } }
-
-    const proc = spawn(process.execPath, [sfPath], {
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
+    // Pakai stockfish binary system (apt-get install stockfish)
+    const proc = spawn('stockfish', [], { stdio: ['pipe', 'pipe', 'pipe'] });
 
     const moves = [];
     let bestMove = null;
@@ -28,13 +22,8 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 200) {
     let buffer = '';
 
     const done = () => {
-      if (!resolved) {
-        resolved = true;
-        proc.kill();
-        resolve({ bestMove, moves: moves.filter(Boolean) });
-      }
+      if (!resolved) { resolved = true; proc.kill(); resolve({ bestMove, moves: moves.filter(Boolean) }); }
     };
-
     const timeout = setTimeout(done, moveTime + 200);
 
     proc.stdout.on('data', (data) => {
@@ -69,17 +58,19 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 200) {
 
     proc.stdin.write('uci\n');
     proc.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
+    proc.stdin.write(`setoption name Threads value 2\n`);
+    proc.stdin.write(`setoption name Hash value 128\n`);
     proc.stdin.write('isready\n');
     proc.stdin.write(`position fen ${fen}\n`);
-    proc.stdin.write(`go movetime ${moveTime} depth 20\n`);
+    proc.stdin.write(`go movetime ${moveTime} depth 25\n`);
   });
 }
 
-app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/health', (req, res) => res.json({ status: 'ok', engine: 'stockfish-binary' }));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
-  const { fen, movetime = 2000 } = req.body;
+  const { fen, movetime = 200 } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
     const result = await analyzeWithStockfish(fen, 3, Math.min(movetime, 200));
