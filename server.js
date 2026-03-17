@@ -78,7 +78,7 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
     proc.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
     proc.stdin.write('isready\n');
     proc.stdin.write(`position fen ${fen}\n`);
-    proc.stdin.write(`go  ${}\n`);
+    proc.stdin.write(`go movetime ${moveTime} depth 20\n`);
   });
 }
 
