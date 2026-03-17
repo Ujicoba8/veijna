@@ -99,7 +99,7 @@ app.post('/analyze', async (req, res) => {
 });
 
 app.get('/inject.js', (req, res) => {
-  const serverUrl = req.protocol + '://' + req.get('host');
+  const serverUrl = 'https://' + req.get('host');
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Cache-Control', 'no-cache');
   let script = fs.readFileSync(path.join(__dirname, 'static', 'bookmarklet.js'), 'utf8');
