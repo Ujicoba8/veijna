@@ -39,7 +39,7 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
       }
     };
 
-    const timeout = setTimeout(done, moveTime + 4000);
+    const timeout = setTimeout(done,  + 4000);
 
     proc.stdout.on('data', (data) => {
       buffer += data.toString();
@@ -78,7 +78,7 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
     proc.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
     proc.stdin.write('isready\n');
     proc.stdin.write(`position fen ${fen}\n`);
-    proc.stdin.write(`go movetime ${moveTime}\n`);
+    proc.stdin.write(`go  ${}\n`);
   });
 }
 
@@ -86,10 +86,10 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
-  const { fen, movetime = 1500 } = req.body;
+  const { fen,  = 1500 } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
-    const result = await analyzeWithStockfish(fen, 3, Math.min(movetime, 3000));
+    const result = await analyzeWithStockfish(fen, 3, Math.min(movetime, 200));
     console.log(`[analyze] best: ${result.bestMove}`);
     res.json(result);
   } catch (err) {
