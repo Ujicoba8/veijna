@@ -124,8 +124,7 @@
       if (!histEl) return null;
       let text = histEl.textContent || '';
       // Fix: "c52." → "c5 2." — tambah spasi sebelum nomor move
-      text = text.replace(/([a-zA-Z][1-8])(\d+\.)/g, '$1 $2');
-
+      text = text.replace(/([a-zA-Z0-9+#!?][1-8+#!?]?)(\d+\.)/g, '$1 $2');
       const chess = new Chess();
       const tokens = text.split(/\s+/).filter(t =>
         t.length >= 2 &&
