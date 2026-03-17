@@ -11,11 +11,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'static')));
 
-function analyzeWithStockfish(fen, multiPV = 3, moveTime = 200) {
+function runStockfish(commands, moveTime = 200) {
   return new Promise((resolve, reject) => {
-    // Pakai stockfish binary system (apt-get install stockfish)
     const proc = spawn('stockfish', [], { stdio: ['pipe', 'pipe', 'pipe'] });
-
     const moves = [];
     let bestMove = null;
     let resolved = false;
@@ -41,7 +39,7 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 200) {
             const score = m[2] === 'mate'
               ? (val > 0 ? `Mate in ${val}` : `Mated in ${Math.abs(val)}`)
               : (val > 0 ? '+' : '') + (val / 100).toFixed(2);
-            moves[idx] = { move: m[4], score };
+            moves[idx] = { move: m[4], score, raw: val, type: m[2] };
           }
         }
         if (line.startsWith('bestmove')) {
@@ -56,25 +54,54 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 200) {
     proc.stderr.on('data', () => {});
     proc.on('error', (err) => { if (!resolved) { resolved = true; clearTimeout(timeout); reject(err); } });
 
-    proc.stdin.write('uci\n');
-    proc.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
-    proc.stdin.write(`setoption name Threads value 2\n`);
-    proc.stdin.write(`setoption name Hash value 128\n`);
-    proc.stdin.write('isready\n');
-    proc.stdin.write(`position fen ${fen}\n`);
-    proc.stdin.write(`go movetime ${moveTime} depth 25\n`);
+    commands.forEach(cmd => proc.stdin.write(cmd + '\n'));
   });
+}
+
+function analyzeNormal(fen, multiPV = 3, moveTime = 200) {
+  return runStockfish([
+    'uci',
+    `setoption name MultiPV value ${multiPV}`,
+    'setoption name Threads value 2',
+    'setoption name Hash value 128',
+    'isready',
+    `position fen ${fen}`,
+    `go movetime ${moveTime} depth 25`
+  ], moveTime);
+}
+
+function analyzeMate(fen, moveTime = 200) {
+  // Cari mate dalam 1-10 langkah
+  return runStockfish([
+    'uci',
+    'setoption name MultiPV value 1',
+    'setoption name Threads value 2',
+    'setoption name Hash value 128',
+    'isready',
+    `position fen ${fen}`,
+    `go movetime ${moveTime} depth 30 mate 10`
+  ], moveTime);
 }
 
 app.get('/health', (req, res) => res.json({ status: 'ok', engine: 'stockfish-binary' }));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
-  const { fen, movetime = 200 } = req.body;
+  const { fen, movetime = 2000, mode = 'normal' } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
-    const result = await analyzeWithStockfish(fen, 3, Math.min(movetime, 200));
-    console.log(`[analyze] best: ${result.bestMove}`);
+    let result;
+    if (mode === 'mate') {
+      // Coba cari mate dulu, kalau tidak ada fallback ke normal
+      result = await analyzeMate(fen, Math.min(movetime, 200));
+      if (!result.bestMove || !result.moves.some(m => m.type === 'mate')) {
+        const normal = await analyzeNormal(fen, 3, Math.min(movetime, 3000));
+        result = normal;
+      }
+    } else {
+      result = await analyzeNormal(fen, 3, Math.min(movetime, 3000));
+    }
+    console.log(`[${mode}] best: ${result.bestMove}`);
     res.json(result);
   } catch (err) {
     console.error('[analyze]', err.message);
