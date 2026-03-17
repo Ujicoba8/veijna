@@ -1,7 +1,7 @@
 // Hustle Chess Helper - Bookmarklet Inject Script
 // Server URL is replaced dynamically by /inject.js endpoint
 (function () {
-  const SERVER = 'https://YOUR-APP.railway.app';  // replaced by server
+  const SERVER = 'https://hustle-chess-helper-production.up.railway.app';
 
   // ── Prevent double-inject ──────────────────────────────
   if (window.__hchLoaded) {
