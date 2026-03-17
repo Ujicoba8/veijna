@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const { spawn } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,73 +13,72 @@ app.use(express.static(path.join(__dirname, 'static')));
 
 function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
   return new Promise((resolve, reject) => {
-    let sf;
-    try {
-      const stockfish = require('stockfish');
-      // v10 bisa export function atau object
-      sf = typeof stockfish === 'function' ? stockfish() : stockfish;
-      if (!sf) throw new Error('Cannot init stockfish');
-    } catch(e) {
-      return reject(new Error('Stockfish init failed: ' + e.message));
+    // Cari path stockfish.js dari npm package
+    let sfPath;
+    try { sfPath = require.resolve('stockfish/src/stockfish.js'); }
+    catch {
+      try { sfPath = require.resolve('stockfish'); }
+      catch { return reject(new Error('Stockfish not found')); }
     }
+
+    // Jalankan sebagai child process Node.js
+    const proc = spawn(process.execPath, [sfPath], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
 
     const moves = [];
     let bestMove = null;
     let resolved = false;
+    let buffer = '';
 
     const done = () => {
       if (!resolved) {
         resolved = true;
+        proc.kill();
         resolve({ bestMove, moves: moves.filter(Boolean) });
       }
     };
 
-    const timeout = setTimeout(done, moveTime + 3000);
+    const timeout = setTimeout(done, moveTime + 4000);
 
-    // stockfish v10 pakai addMessageListener
-    const handler = (line) => {
-      if (typeof line !== 'string') return;
+    proc.stdout.on('data', (data) => {
+      buffer += data.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
 
-      if (line.startsWith('info') && line.includes('multipv') && line.includes('score')) {
-        const m = line.match(/multipv (\d+).*?score (cp|mate) (-?\d+).*? pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
-        if (m) {
-          const idx = parseInt(m[1]) - 1;
-          const val = parseInt(m[3]);
-          const score = m[2] === 'mate'
-            ? (val > 0 ? `Mate in ${val}` : `Mated in ${Math.abs(val)}`)
-            : (val > 0 ? '+' : '') + (val / 100).toFixed(2);
-          moves[idx] = { move: m[4], score };
+      lines.forEach(line => {
+        line = line.trim();
+        if (!line) return;
+
+        if (line.startsWith('info') && line.includes('multipv') && line.includes('score')) {
+          const m = line.match(/multipv (\d+).*?score (cp|mate) (-?\d+).*? pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
+          if (m) {
+            const idx = parseInt(m[1]) - 1;
+            const val = parseInt(m[3]);
+            const score = m[2] === 'mate'
+              ? (val > 0 ? `Mate in ${val}` : `Mated in ${Math.abs(val)}`)
+              : (val > 0 ? '+' : '') + (val / 100).toFixed(2);
+            moves[idx] = { move: m[4], score };
+          }
         }
-      }
 
-      if (line.startsWith('bestmove')) {
-        const bm = line.split(' ')[1];
-        bestMove = bm && bm !== '(none)' ? bm : null;
-        clearTimeout(timeout);
-        done();
-      }
-    };
+        if (line.startsWith('bestmove')) {
+          const bm = line.split(' ')[1];
+          bestMove = bm && bm !== '(none)' ? bm : null;
+          clearTimeout(timeout);
+          done();
+        }
+      });
+    });
 
-    // Try different listener APIs
-    if (typeof sf.addMessageListener === 'function') {
-      sf.addMessageListener(handler);
-    } else if (typeof sf.onmessage !== 'undefined') {
-      sf.onmessage = handler;
-    } else {
-      return reject(new Error('No message listener API found'));
-    }
+    proc.stderr.on('data', () => {});
+    proc.on('error', (err) => { if (!resolved) { resolved = true; clearTimeout(timeout); reject(err); } });
 
-    // Try different postMessage APIs
-    const send = (msg) => {
-      if (typeof sf.postMessage === 'function') sf.postMessage(msg);
-      else if (typeof sf.send === 'function') sf.send(msg);
-    };
-
-    send('uci');
-    send(`setoption name MultiPV value ${multiPV}`);
-    send('isready');
-    send(`position fen ${fen}`);
-    send(`go movetime ${moveTime}`);
+    proc.stdin.write('uci\n');
+    proc.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
+    proc.stdin.write('isready\n');
+    proc.stdin.write(`position fen ${fen}\n`);
+    proc.stdin.write(`go movetime ${moveTime}\n`);
   });
 }
 
