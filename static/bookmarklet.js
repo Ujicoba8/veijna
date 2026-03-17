@@ -8,14 +8,13 @@
   let currentFen = '';
   let playerColor = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
   let isAnalyzing = false;
-  let mode = 'normal'; // 'normal' or 'mate'
+  let mode = 'normal';
 
   function loadChessJs(cb) {
     if (window.Chess) { cb(); return; }
     const s = document.createElement('script');
     s.src = 'https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js';
-    s.onload = cb;
-    document.head.appendChild(s);
+    s.onload = cb; document.head.appendChild(s);
   }
 
   const style = document.createElement('style');
@@ -43,18 +42,13 @@
     }
     .hch-btn:hover { background: #c9a84c22; border-color: #c9a84c; }
     .hch-body { padding: 12px 14px; }
-    .hch-status {
-      display: flex; align-items: center; gap: 8px;
-      font-family: 'Space Mono', monospace; font-size: 10px; color: #666; margin-bottom: 8px;
-    }
+    .hch-status { display: flex; align-items: center; gap: 8px; font-family: 'Space Mono', monospace; font-size: 10px; color: #666; margin-bottom: 8px; }
     .hch-dot { width: 7px; height: 7px; border-radius: 50%; background: #333; flex-shrink: 0; }
     .hch-dot.on { background: #4caf50; box-shadow: 0 0 6px #4caf5077; animation: hch-blink 1.4s infinite; }
     .hch-dot.thinking { background: #ff9800; box-shadow: 0 0 6px #ff980077; animation: hch-blink 0.7s infinite; }
     .hch-dot.mate { background: #e040fb; box-shadow: 0 0 6px #e040fb77; animation: hch-blink 0.5s infinite; }
     @keyframes hch-blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
-    .hch-mode-bar {
-      display: flex; gap: 6px; margin-bottom: 10px;
-    }
+    .hch-mode-bar { display: flex; gap: 6px; margin-bottom: 10px; }
     .hch-mode-btn {
       flex: 1; padding: 5px; border-radius: 6px; cursor: pointer;
       font-family: 'Rajdhani', sans-serif; font-size: 12px; font-weight: 700;
@@ -64,10 +58,7 @@
     .hch-mode-btn.mate-btn.active { background: #1a0010; border-color: #e040fb; color: #e040fb; }
     .hch-moves { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
     .hch-empty { font-family:'Space Mono',monospace; font-size:11px; color:#444; text-align:center; padding:10px 0; }
-    .hch-row {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 10px; background: #111; border: 1px solid #222; border-radius: 6px;
-    }
+    .hch-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #111; border: 1px solid #222; border-radius: 6px; }
     .hch-row.top { background: linear-gradient(135deg, #1a1400, #201800); border-color: #c9a84c55; }
     .hch-row.mate-move { background: linear-gradient(135deg, #1a0010, #200018); border-color: #e040fb55; }
     .hch-rank { font-size: 12px; color: #555; width: 14px; text-align:center; flex-shrink:0; }
@@ -77,21 +68,13 @@
     .hch-row.top .hch-mv { color: #ffd966; }
     .hch-row.mate-move .hch-mv { color: #f48fb1; }
     .hch-sc { font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700; min-width: 52px; text-align: right; }
-    .hch-sc.win { color: #4caf50; }
-    .hch-sc.eq  { color: #ffc107; }
-    .hch-sc.los { color: #f44336; }
-    .hch-sc.mat { color: #e040fb; font-size: 10px; }
+    .hch-sc.win { color: #4caf50; } .hch-sc.eq { color: #ffc107; } .hch-sc.los { color: #f44336; } .hch-sc.mat { color: #e040fb; font-size: 10px; }
     .hch-turn { font-family:'Space Mono',monospace; font-size:10px; color:#666; text-align:center; margin-bottom:6px; }
     .hch-turn strong { color: #c9a84c; }
     .hch-footer { border-top: 1px solid #1a1a1a; padding-top: 8px; display: flex; align-items: center; justify-content: space-between; }
     .hch-color-lbl { font-family:'Space Mono',monospace; font-size: 10px; color: #555; }
     .hch-color-lbl strong { color: #c9a84c; }
-    .hch-toggle {
-      background: #c9a84c22; border: 1px solid #c9a84c55; color: #c9a84c;
-      padding: 3px 8px; border-radius: 4px; cursor: pointer;
-      font-size: 11px; font-family: 'Rajdhani', sans-serif; font-weight: 700; transition: all 0.15s;
-    }
-    .hch-toggle:hover { background: #c9a84c44; }
+    .hch-toggle { background: #c9a84c22; border: 1px solid #c9a84c55; color: #c9a84c; padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-family: 'Rajdhani', sans-serif; font-weight: 700; }
   `;
   document.head.appendChild(style);
 
@@ -106,10 +89,7 @@
       </div>
     </div>
     <div class="hch-body" id="hch-body">
-      <div class="hch-status">
-        <span class="hch-dot" id="hch-dot"></span>
-        <span id="hch-status-txt">Loading...</span>
-      </div>
+      <div class="hch-status"><span class="hch-dot" id="hch-dot"></span><span id="hch-status-txt">Loading...</span></div>
       <div class="hch-mode-bar">
         <button class="hch-mode-btn active" id="btn-normal">⚡ Best Move</button>
         <button class="hch-mode-btn mate-btn" id="btn-mate">☠ Hunt Mate</button>
@@ -120,152 +100,120 @@
         <div class="hch-color-lbl">Playing as: <strong id="hch-color-lbl">${playerColor === 'w' ? 'White ♔' : 'Black ♚'}</strong></div>
         <button class="hch-toggle" id="hch-toggle">Switch ⇄</button>
       </div>
-    </div>
-  `;
+    </div>`;
   document.body.appendChild(panel);
 
-  // Controls
   let minimized = false;
-  document.getElementById('hch-min').onclick = () => {
-    minimized = !minimized;
-    document.getElementById('hch-body').style.display = minimized ? 'none' : 'block';
-    document.getElementById('hch-min').textContent = minimized ? '+' : '−';
-  };
-  document.getElementById('hch-close').onclick = () => { panel.remove(); window.__hchLoaded = false; };
-  document.getElementById('hch-toggle').onclick = () => {
-    playerColor = playerColor === 'w' ? 'b' : 'w';
-    document.getElementById('hch-color-lbl').textContent = playerColor === 'w' ? 'White ♔' : 'Black ♚';
-    currentFen = ''; triggerAnalysis();
-  };
-  document.getElementById('btn-normal').onclick = () => {
-    mode = 'normal';
-    document.getElementById('btn-normal').classList.add('active');
-    document.getElementById('btn-mate').classList.remove('active');
-    currentFen = ''; triggerAnalysis();
-  };
-  document.getElementById('btn-mate').onclick = () => {
-    mode = 'mate';
-    document.getElementById('btn-mate').classList.add('active');
-    document.getElementById('btn-normal').classList.remove('active');
-    currentFen = ''; triggerAnalysis();
-  };
+  document.getElementById('hch-min').onclick = () => { minimized=!minimized; document.getElementById('hch-body').style.display=minimized?'none':'block'; document.getElementById('hch-min').textContent=minimized?'+':'−'; };
+  document.getElementById('hch-close').onclick = () => { panel.remove(); window.__hchLoaded=false; };
+  document.getElementById('hch-toggle').onclick = () => { playerColor=playerColor==='w'?'b':'w'; document.getElementById('hch-color-lbl').textContent=playerColor==='w'?'White ♔':'Black ♚'; currentFen=''; };
+  document.getElementById('btn-normal').onclick = () => { mode='normal'; document.getElementById('btn-normal').classList.add('active'); document.getElementById('btn-mate').classList.remove('active'); currentFen=''; };
+  document.getElementById('btn-mate').onclick = () => { mode='mate'; document.getElementById('btn-mate').classList.add('active'); document.getElementById('btn-normal').classList.remove('active'); currentFen=''; };
 
-  // Drag
   document.getElementById('hch-head').addEventListener('mousedown', e => {
-    let ox = e.clientX - panel.getBoundingClientRect().left;
-    let oy = e.clientY - panel.getBoundingClientRect().top;
-    const mv = e2 => { panel.style.left=(e2.clientX-ox)+'px'; panel.style.top=(e2.clientY-oy)+'px'; panel.style.right='auto'; };
-    const up = () => { document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up); };
-    document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
+    let ox=e.clientX-panel.getBoundingClientRect().left, oy=e.clientY-panel.getBoundingClientRect().top;
+    const mv=e2=>{panel.style.left=(e2.clientX-ox)+'px';panel.style.top=(e2.clientY-oy)+'px';panel.style.right='auto';};
+    const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);};
+    document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
   });
 
-  // UI
   function setStatus(msg, state='idle') {
     document.getElementById('hch-status-txt').textContent = msg;
-    const dot = document.getElementById('hch-dot');
-    dot.className = 'hch-dot' + (state==='on'?' on':state==='thinking'?' thinking':state==='mate'?' mate':'');
+    document.getElementById('hch-dot').className = 'hch-dot'+(state==='on'?' on':state==='thinking'?' thinking':state==='mate'?' mate':'');
   }
 
   function renderMoves(moves, turn) {
     const isMyTurn = turn === playerColor;
-    document.getElementById('hch-turn').innerHTML = isMyTurn
-      ? `<strong>Your turn</strong> — make a move!`
-      : `Opponent's turn...`;
-
+    document.getElementById('hch-turn').innerHTML = isMyTurn ? `<strong>Your turn!</strong>` : `Opponent's turn...`;
     const el = document.getElementById('hch-moves');
-    if (!moves || !moves.length) { el.innerHTML = '<div class="hch-empty">No moves found</div>'; return; }
-
+    if (!moves || !moves.length) { el.innerHTML='<div class="hch-empty">No moves</div>'; return; }
     el.innerHTML = moves.map((m,i) => {
       const sc = m.score;
-      const isMate = sc.includes('Mate') || sc.includes('mate');
-      const scClass = isMate ? 'mat' : parseFloat(sc)>0.3 ? 'win' : parseFloat(sc)<-0.3 ? 'los' : 'eq';
-      const rowClass = isMate ? 'mate-move' : (i===0 ? 'top' : '');
-      const rank = isMate ? '☠' : (i===0 ? '★' : i+1);
-      const notation = m.move.slice(0,2)+' → '+m.move.slice(2,4)+(m.move[4]?'='+m.move[4].toUpperCase():'');
-      return `<div class="hch-row ${rowClass}">
-        <span class="hch-rank">${rank}</span>
-        <span class="hch-mv">${notation}</span>
-        <span class="hch-sc ${scClass}">${sc}</span>
-      </div>`;
+      const isMate = sc.includes('Mate')||sc.includes('mate');
+      const scClass = isMate?'mat':parseFloat(sc)>0.3?'win':parseFloat(sc)<-0.3?'los':'eq';
+      const rowClass = isMate?'mate-move':i===0?'top':'';
+      const rank = isMate?'☠':i===0?'★':i+1;
+      const n = m.move.slice(0,2)+' → '+m.move.slice(2,4)+(m.move[4]?'='+m.move[4].toUpperCase():'');
+      return `<div class="hch-row ${rowClass}"><span class="hch-rank">${rank}</span><span class="hch-mv">${n}</span><span class="hch-sc ${scClass}">${sc}</span></div>`;
     }).join('');
-
-    const hasMate = moves.some(m => m.score.includes('Mate'));
-    if (hasMate) setStatus('☠ Mate found!', 'mate');
-    else setStatus(isMyTurn ? 'Your move! ✓' : 'Waiting...', 'on');
+    const hasMate = moves.some(m=>m.score.includes('Mate'));
+    if(hasMate) setStatus('☠ Mate found!','mate');
+    else setStatus(isMyTurn?'Your move! ✓':'Waiting...','on');
   }
 
-  // FEN from move history
+  // ── Parse move history dengan fix spasi ────────────────
   function getFenFromHistory() {
-  if (!window.Chess) return null;
-  try {
-    const histEl = document.querySelector('[class*="move-history"], [class*="moveHistory"], [class*="history"]');
-    if (!histEl) return null;
-    const text = histEl.textContent || '';
-    
-    // Fix: tambah spasi sebelum angka move (misal "c52." → "c5 2.")
-    const fixed = text.replace(/(\S)(\d+\.)/g, '$1 $2');
-    
-    const chess = new Chess();
-    const moveMatches = fixed.match(/\d+\.\s*(\S+)(?:\s+(\S+))?/g);
-    if (!moveMatches) return null;
-    
-    for (const match of moveMatches) {
-      const parts = match.replace(/\d+\./, '').trim().split(/\s+/);
-      for (const move of parts) {
-        if (!move || move === '...' || move.match(/^\d+$/)) continue;
-        try { chess.move(move); } catch(e) { break; }
-      }
-    }
-    return chess.fen();
-  } catch(e) { return null; }
-}
+    if (!window.Chess) return null;
+    try {
+      const histEl = document.querySelector('[class*="history"]');
+      if (!histEl) return null;
+      let text = histEl.textContent || '';
 
-  // FEN from DOM
-  function getFenFromDOM(turn = 'w') {
+      // Fix: "c52." → "c5 2." — tambah spasi sebelum nomor move
+      text = text.replace(/([a-zA-Z0-9+#=!?])(\d+\.)/g, '$1 $2');
+      // Fix: "Nf32." → "Nf3 2."
+      text = text.replace(/([a-zA-Z])(\d+\.)/g, '$1 $2');
+
+      const chess = new Chess();
+      // Extract semua token moves
+      const tokens = text.split(/\s+/).filter(t => t && !t.match(/^\d+\.$/) && !['Move','History:','No','moves','yet'].includes(t));
+
+      for (const token of tokens) {
+        if (token.match(/^\d+\.$/)) continue;
+        try { 
+          const result = chess.move(token, {sloppy: true}); 
+          if (!result) break;
+        } catch(e) { break; }
+      }
+      const fen = chess.fen();
+      // Pastikan bukan starting position kalau ada moves
+      if (tokens.length > 0 && fen === 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1') return null;
+      return fen;
+    } catch(e) { return null; }
+  }
+
+  function getFenFromDOM(turn='w') {
     const squares = document.querySelectorAll('[data-square]');
     if (!squares.length) return null;
-    const b = Array(8).fill(null).map(() => Array(8).fill(null));
+    const b = Array(8).fill(null).map(()=>Array(8).fill(null));
     squares.forEach(sq => {
       const sqn = sq.getAttribute('data-square');
-      if (!sqn || sqn.length < 2) return;
-      const fi = sqn.charCodeAt(0) - 97;
-      const ri = 8 - parseInt(sqn[1]);
-      if (fi < 0 || fi > 7 || ri < 0 || ri > 7) return;
-      const img = sq.querySelector('img[data-piece]');
-      const pv = img ? img.getAttribute('data-piece') : null;
-      if (!pv || pv.length < 2) return;
-      b[ri][fi] = pv[0].toLowerCase() + pv[1].toLowerCase();
+      if (!sqn||sqn.length<2) return;
+      const fi=sqn.charCodeAt(0)-97, ri=8-parseInt(sqn[1]);
+      if(fi<0||fi>7||ri<0||ri>7) return;
+      const img=sq.querySelector('img[data-piece]');
+      const pv=img?img.getAttribute('data-piece'):null;
+      if(!pv||pv.length<2) return;
+      b[ri][fi]=pv[0].toLowerCase()+pv[1].toLowerCase();
     });
-    if (!b.some(row => row.some(c => c !== null))) return null;
-    let fen = '';
-    for (let r=0; r<8; r++) {
-      let e=0, row='';
-      for (let f=0; f<8; f++) {
-        const p = b[r][f];
-        if (!p) { e++; } else { if(e){row+=e;e=0;} row += p[0]==='w' ? p[1].toUpperCase() : p[1]; }
-      }
-      if (e) row += e;
-      fen += row + (r < 7 ? '/' : '');
-    }
-    return fen + ' ' + turn + ' KQkq - 0 1';
+    if(!b.some(row=>row.some(c=>c!==null))) return null;
+    let fen='';
+    for(let r=0;r<8;r++){let e=0,row='';for(let f=0;f<8;f++){const p=b[r][f];if(!p){e++;}else{if(e){row+=e;e=0;}row+=p[0]==='w'?p[1].toUpperCase():p[1];}}if(e)row+=e;fen+=row+(r<7?'/':'');}
+    return fen+' '+turn+' KQkq - 0 1';
   }
 
   function detectPosition() {
+    // Auto-detect player color
     const detected = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
     if (detected !== playerColor) {
       playerColor = detected;
-      document.getElementById('hch-color-lbl').textContent = playerColor === 'w' ? 'White ♔' : 'Black ♚';
+      document.getElementById('hch-color-lbl').textContent = playerColor==='w'?'White ♔':'Black ♚';
       currentFen = '';
     }
-    const fenFromHistory = getFenFromHistory();
-    if (fenFromHistory) {
-      const turn = fenFromHistory.split(' ')[1];
-      return { fen: fenFromHistory, turn };
+
+    // Coba dari history dulu (paling akurat)
+    const fenHist = getFenFromHistory();
+    if (fenHist) {
+      const turn = fenHist.split(' ')[1];
+      return { fen: fenHist, turn };
     }
-    const histEl = document.querySelector('[class*="move-history"], [class*="moveHistory"], [class*="history"]');
+
+    // Fallback: hitung dari jumlah moves di history
+    const histEl = document.querySelector('[class*="history"]');
     const histText = histEl ? histEl.textContent : '';
-    const halfMoves = histText.trim().split(/\s+/).filter(s => s && !s.match(/^\d+\./) && !['Move','History:','No','moves','yet'].includes(s)).length;
-    const turn = halfMoves % 2 === 0 ? 'w' : 'b';
+    let text = histText.replace(/([a-zA-Z0-9+#=!?])(\d+\.)/g, '$1 $2');
+    const tokens = text.split(/\s+/).filter(t => t && !t.match(/^\d+\.$/) && !['Move','History:','No','moves','yet'].includes(t));
+    const turn = tokens.length % 2 === 0 ? 'w' : 'b';
     const fen = getFenFromDOM(turn);
     return fen ? { fen, turn } : null;
   }
@@ -273,31 +221,30 @@
   async function triggerAnalysis() {
     if (isAnalyzing) return;
     const pos = detectPosition();
-    if (!pos) { setStatus('Board not detected', 'idle'); return; }
+    if (!pos) { setStatus('Board not detected','idle'); return; }
     const { fen, turn } = pos;
     if (fen === currentFen) return;
     currentFen = fen;
 
     isAnalyzing = true;
-    setStatus(mode === 'mate' ? '☠ Hunting mate...' : 'Analyzing...', 'thinking');
+    setStatus(mode==='mate'?'☠ Hunting...':'Analyzing...','thinking');
 
     try {
       const res = await fetch(`${SERVER}/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen, movetime: mode === 'mate' ? 200 : 2000, mode })
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ fen, movetime: mode==='mate'?3000:2000, mode })
       });
       const data = await res.json();
       renderMoves(data.moves, turn);
     } catch(err) {
-      setStatus('Server error ✗', 'idle');
+      setStatus('Server error ✗','idle');
     } finally {
       isAnalyzing = false;
     }
   }
 
   loadChessJs(() => {
-    setStatus('Connected ✓', 'on');
+    setStatus('Connected ✓','on');
     setInterval(triggerAnalysis, 200);
     setTimeout(triggerAnalysis, 200);
   });
