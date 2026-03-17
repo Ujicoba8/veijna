@@ -211,7 +211,7 @@ text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');
     try {
       const res = await fetch(`${SERVER}/analyze`, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ fen, movetime: mode==='mate'?300:200, mode })
+        body: JSON.stringify({ fen, movetime: mode==='mate'?50:50, mode })
       });
       const data = await res.json();
       renderMoves(data.moves, turn);
@@ -224,8 +224,8 @@ text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');
 
   loadChessJs(() => {
     setStatus('Connected ✓','on');
-    setInterval(triggerAnalysis, 500);
-    setTimeout(triggerAnalysis, 200);
+    setInterval(triggerAnalysis, 50);
+    setTimeout(triggerAnalysis, 50);
   });
 
   console.log('[HCH] Loaded ✓');
