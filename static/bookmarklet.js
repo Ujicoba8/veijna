@@ -102,11 +102,11 @@
   }
 
   function renderMoves(moves,turn) {
-    document.getElementById('hch-turn').innerHTML = turn===playerColor ? `<strong>Your turn!</strong>` : `Opponent's turn...`;
+    document.getElementById('hch-turn').innerHTML=turn===playerColor?`<strong>Your turn!</strong>`:`Opponent's turn...`;
     const el=document.getElementById('hch-moves');
     if(!moves||!moves.length){el.innerHTML='<div class="hch-empty">No moves</div>';return;}
     el.innerHTML=moves.map((m,i)=>{
-      const sc=m.score, isMate=sc.includes('Mate')||sc.includes('mate');
+      const sc=m.score,isMate=sc.includes('Mate')||sc.includes('mate');
       const scClass=isMate?'mat':parseFloat(sc)>0.3?'win':parseFloat(sc)<-0.3?'los':'eq';
       const rowClass=isMate?'mate-move':i===0?'top':'';
       const rank=isMate?'☠':i===0?'★':i+1;
@@ -114,7 +114,7 @@
       return `<div class="hch-row ${rowClass}"><span class="hch-rank">${rank}</span><span class="hch-mv">${n}</span><span class="hch-sc ${scClass}">${sc}</span></div>`;
     }).join('');
     const hasMate=moves.some(m=>m.score.includes('Mate'));
-    setStatus(hasMate?'☠ Mate found!':turn===playerColor?'Your move! ✓':'Waiting...', hasMate?'mate':'on');
+    setStatus(hasMate?'☠ Mate found!':turn===playerColor?'Your move! ✓':'Waiting...',hasMate?'mate':'on');
   }
 
   function getFenFromHistory() {
@@ -123,22 +123,17 @@
       const histEl = document.querySelector('[class*="history"]');
       if (!histEl) return null;
       let text = histEl.textContent || '';
-
-      // Fix spasi: "e4c5" atau "c52." → pisah dengan spasi
-      // 1. Tambah spasi sebelum nomor move: "c52." → "c5 2."
+      // Fix: "c52." → "c5 2." — tambah spasi sebelum nomor move
       text = text.replace(/([a-zA-Z0-9+#!?])(\d+\.)/g, '$1 $2');
-      // 2. Pisah lowercase letter setelah piece move: "e4c5" → "e4 c5"
+      // Fix: "e4c5" → "e4 c5"
       text = text.replace(/([a-h][1-8])([a-zA-Z])/g, '$1 $2');
-      // 3. Pisah setelah capture: "xd4d5" → "xd4 d5"  
-      text = text.replace(/([a-h][1-8])([NBRQK])/g, '$1 $2');
 
       const chess = new Chess();
-      // Filter token: minimal 2 char, bukan header words, bukan nomor saja
-      const tokens = text.split(/\s+/).filter(t => 
-        t.length >= 2 && 
-        !t.match(/^\d+\.$/) && 
+      const tokens = text.split(/\s+/).filter(t =>
+        t.length >= 2 &&
+        !t.match(/^\d+\.$/) &&
         !t.match(/^\d+$/) &&
-        !['Move','History:','No','moves','yet','1.','2.','3.','4.','5.','6.','7.','8.','9.'].includes(t)
+        !['Move','History:','No','moves','yet'].includes(t)
       );
 
       let moveCount = 0;
@@ -162,7 +157,7 @@
     squares.forEach(sq=>{
       const sqn=sq.getAttribute('data-square');
       if(!sqn||sqn.length<2) return;
-      const fi=sqn.charCodeAt(0)-97, ri=8-parseInt(sqn[1]);
+      const fi=sqn.charCodeAt(0)-97,ri=8-parseInt(sqn[1]);
       if(fi<0||fi>7||ri<0||ri>7) return;
       const img=sq.querySelector('img[data-piece]');
       const pv=img?img.getAttribute('data-piece'):null;
@@ -186,13 +181,12 @@
     const fenHist = getFenFromHistory();
     if (fenHist) return { fen: fenHist, turn: fenHist.split(' ')[1] };
 
-    // Fallback: hitung moves dari text
     const histEl = document.querySelector('[class*="history"]');
-    let text = (histEl ? histEl.textContent : '').replace(/([a-zA-Z0-9+#!?])(\d+\.)/g, '$1 $2').replace(/([a-h][1-8])([a-zA-Z])/g, '$1 $2');
-    const tokens = text.split(/\s+/).filter(t => t.length>=2 && !t.match(/^\d+\.?$/) && !['Move','History:','No','moves','yet'].includes(t));
-    const turn = tokens.length % 2 === 0 ? 'w' : 'b';
+    let text = (histEl?histEl.textContent:'').replace(/([a-zA-Z0-9+#!?])(\d+\.)/g,'$1 $2').replace(/([a-h][1-8])([a-zA-Z])/g,'$1 $2');
+    const tokens = text.split(/\s+/).filter(t=>t.length>=2&&!t.match(/^\d+\.?$/)&&!['Move','History:','No','moves','yet'].includes(t));
+    const turn = tokens.length%2===0?'w':'b';
     const fen = getFenFromDOM(turn);
-    return fen ? { fen, turn } : null;
+    return fen?{fen,turn}:null;
   }
 
   async function triggerAnalysis() {
@@ -200,6 +194,15 @@
     const pos = detectPosition();
     if (!pos) { setStatus('Board not detected','idle'); return; }
     const { fen, turn } = pos;
+
+    // Hanya analisis waktu giliran kamu
+    if (turn !== playerColor) {
+      setStatus('Opponent thinking...','idle');
+      document.getElementById('hch-turn').innerHTML = `Opponent's turn...`;
+      currentFen = '';
+      return;
+    }
+
     if (fen === currentFen) return;
     currentFen = fen;
 
