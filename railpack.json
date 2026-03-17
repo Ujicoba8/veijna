@@ -1,8 +1,0 @@
-{
-  "start": {
-    "command": "node server.js"
-  },
-  "build": {
-    "command": "npm install"
-  }
-}
