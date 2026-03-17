@@ -1,233 +1,103 @@
-// Hustle Chess Helper - Bookmarklet Inject Script
-(function () {
-  const SERVER = 'https://hustle-chess-helper-production.up.railway.app';
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
+const { spawn } = require('child_process');
 
-  if (window.__hchLoaded) { console.log('[HCH] Already loaded'); return; }
-  window.__hchLoaded = true;
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-  let currentFen = '';
-  let playerColor = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
-  let isAnalyzing = false;
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'static')));
 
-  // ── CSS ────────────────────────────────────────────────
-  const style = document.createElement('style');
-  style.textContent = `
-    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Rajdhani:wght@600;700&display=swap');
-    #hch-panel {
-      position: fixed; top: 20px; right: 20px;
-      width: 270px; z-index: 999999;
-      background: #0d0d0d;
-      border: 1px solid #c9a84c;
-      border-radius: 10px;
-      box-shadow: 0 0 40px rgba(201,168,76,0.2), 0 12px 40px rgba(0,0,0,0.7);
-      font-family: 'Rajdhani', sans-serif;
-      overflow: hidden;
-    }
-    #hch-panel * { box-sizing: border-box; margin: 0; padding: 0; }
-    .hch-head {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 14px; cursor: grab;
-      background: linear-gradient(135deg, #1a1400, #2c1f00);
-      border-bottom: 1px solid #c9a84c33;
-    }
-    .hch-title { color: #c9a84c; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-    .hch-btns { display: flex; gap: 5px; }
-    .hch-btn {
-      background: transparent; border: 1px solid #c9a84c33;
-      color: #c9a84c; width: 22px; height: 22px; border-radius: 4px;
-      cursor: pointer; font-size: 13px; display: flex;
-      align-items: center; justify-content: center; transition: all 0.15s;
-    }
-    .hch-btn:hover { background: #c9a84c22; border-color: #c9a84c; }
-    .hch-body { padding: 12px 14px; }
-    .hch-status {
-      display: flex; align-items: center; gap: 8px;
-      font-family: 'Space Mono', monospace;
-      font-size: 10px; color: #666; margin-bottom: 10px;
-    }
-    .hch-dot { width: 7px; height: 7px; border-radius: 50%; background: #333; flex-shrink: 0; }
-    .hch-dot.on { background: #4caf50; box-shadow: 0 0 6px #4caf5077; animation: hch-blink 1.4s infinite; }
-    .hch-dot.thinking { background: #ff9800; box-shadow: 0 0 6px #ff980077; animation: hch-blink 0.7s infinite; }
-    @keyframes hch-blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
-    .hch-moves { display: flex; flex-direction: column; gap: 5px; margin-bottom: 10px; }
-    .hch-empty { font-family:'Space Mono',monospace; font-size:11px; color:#444; text-align:center; padding:10px 0; }
-    .hch-row {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 10px; background: #111;
-      border: 1px solid #222; border-radius: 6px;
-    }
-    .hch-row.top { background: linear-gradient(135deg, #1a1400, #201800); border-color: #c9a84c55; }
-    .hch-rank { font-size: 12px; color: #555; width: 14px; text-align:center; flex-shrink:0; }
-    .hch-row.top .hch-rank { color: #c9a84c; }
-    .hch-mv { font-family: 'Space Mono', monospace; font-size: 13px; font-weight: 700; color: #ddd; flex: 1; letter-spacing: 0.05em; }
-    .hch-row.top .hch-mv { color: #ffd966; }
-    .hch-sc { font-family: 'Space Mono', monospace; font-size: 11px; font-weight: 700; min-width: 52px; text-align: right; }
-    .hch-sc.win { color: #4caf50; }
-    .hch-sc.eq  { color: #ffc107; }
-    .hch-sc.los { color: #f44336; }
-    .hch-sc.mat { color: #ce93d8; font-size: 10px; }
-    .hch-footer { border-top: 1px solid #1a1a1a; padding-top: 8px; display: flex; align-items: center; justify-content: space-between; }
-    .hch-color-lbl { font-family:'Space Mono',monospace; font-size: 10px; color: #555; }
-    .hch-color-lbl strong { color: #c9a84c; }
-    .hch-toggle {
-      background: #c9a84c22; border: 1px solid #c9a84c55;
-      color: #c9a84c; padding: 3px 8px; border-radius: 4px;
-      cursor: pointer; font-size: 11px; font-family: 'Rajdhani', sans-serif;
-      font-weight: 700; transition: all 0.15s;
-    }
-    .hch-toggle:hover { background: #c9a84c44; }
-  `;
-  document.head.appendChild(style);
+function analyzeWithStockfish(fen, multiPV = 3, moveTime = 200) {
+  return new Promise((resolve, reject) => {
+    let sfPath;
+    try { sfPath = require.resolve('stockfish/src/stockfish.js'); }
+    catch { try { sfPath = require.resolve('stockfish'); }
+    catch { return reject(new Error('Stockfish not found')); } }
 
-  // ── Panel ──────────────────────────────────────────────
-  const panel = document.createElement('div');
-  panel.id = 'hch-panel';
-  panel.innerHTML = `
-    <div class="hch-head" id="hch-head">
-      <span class="hch-title">♟ Chess Helper</span>
-      <div class="hch-btns">
-        <button class="hch-btn" id="hch-min">−</button>
-        <button class="hch-btn" id="hch-close">✕</button>
-      </div>
-    </div>
-    <div class="hch-body" id="hch-body">
-      <div class="hch-status">
-        <span class="hch-dot" id="hch-dot"></span>
-        <span id="hch-status-txt">Connecting...</span>
-      </div>
-      <div class="hch-moves" id="hch-moves">
-        <div class="hch-empty">Waiting...</div>
-      </div>
-      <div class="hch-footer">
-        <div class="hch-color-lbl">Playing as: <strong id="hch-color-lbl">${playerColor === 'w' ? 'White ♔' : 'Black ♚'}</strong></div>
-        <button class="hch-toggle" id="hch-toggle">Switch ⇄</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(panel);
-
-  // ── Controls ───────────────────────────────────────────
-  let minimized = false;
-  document.getElementById('hch-min').onclick = () => {
-    minimized = !minimized;
-    document.getElementById('hch-body').style.display = minimized ? 'none' : 'block';
-    document.getElementById('hch-min').textContent = minimized ? '+' : '−';
-  };
-  document.getElementById('hch-close').onclick = () => { panel.remove(); window.__hchLoaded = false; };
-  document.getElementById('hch-toggle').onclick = () => {
-    playerColor = playerColor === 'w' ? 'b' : 'w';
-    document.getElementById('hch-color-lbl').textContent = playerColor === 'w' ? 'White ♔' : 'Black ♚';
-    currentFen = '';
-    triggerAnalysis();
-  };
-
-  // ── Drag ───────────────────────────────────────────────
-  document.getElementById('hch-head').addEventListener('mousedown', e => {
-    let ox = e.clientX - panel.getBoundingClientRect().left;
-    let oy = e.clientY - panel.getBoundingClientRect().top;
-    const move = e2 => { panel.style.left=(e2.clientX-ox)+'px'; panel.style.top=(e2.clientY-oy)+'px'; panel.style.right='auto'; };
-    const up = () => { document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); };
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', up);
-  });
-
-  // ── UI ─────────────────────────────────────────────────
-  function setStatus(msg, state='idle') {
-    document.getElementById('hch-status-txt').textContent = msg;
-    const dot = document.getElementById('hch-dot');
-    dot.className = 'hch-dot' + (state==='on'?' on':state==='thinking'?' thinking':'');
-  }
-
-  function renderMoves(moves) {
-    const el = document.getElementById('hch-moves');
-    if (!moves || !moves.length) { el.innerHTML = '<div class="hch-empty">No moves found</div>'; return; }
-    el.innerHTML = moves.map((m,i) => {
-      const sc = m.score;
-      const scClass = (sc.includes('Mate')||sc.includes('mate')) ? 'mat' : parseFloat(sc)>0.3 ? 'win' : parseFloat(sc)<-0.3 ? 'los' : 'eq';
-      const notation = m.move.slice(0,2)+' → '+m.move.slice(2,4)+(m.move[4]?'='+m.move[4].toUpperCase():'');
-      return `<div class="hch-row ${i===0?'top':''}">
-        <span class="hch-rank">${i===0?'★':i+1}</span>
-        <span class="hch-mv">${notation}</span>
-        <span class="hch-sc ${scClass}">${sc}</span>
-      </div>`;
-    }).join('');
-    setStatus('Analysis complete ✓', 'on');
-  }
-
-  // ── FEN Detection ──────────────────────────────────────
-  function detectFen() {
-    // Auto-detect warna tiap kali
-    const detected = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
-    if (detected !== playerColor) {
-      playerColor = detected;
-      document.getElementById('hch-color-lbl').textContent = playerColor === 'w' ? 'White ♔' : 'Black ♚';
-      currentFen = '';
-    }
-
-    const squares = document.querySelectorAll('[data-square]');
-    if (!squares.length) return null;
-
-    const b = Array(8).fill(null).map(() => Array(8).fill(null));
-    squares.forEach(sq => {
-      const sqn = sq.getAttribute('data-square');
-      if (!sqn || sqn.length < 2) return;
-      const fi = sqn.charCodeAt(0) - 97;
-      const ri = 8 - parseInt(sqn[1]);
-      if (fi < 0 || fi > 7 || ri < 0 || ri > 7) return;
-      const img = sq.querySelector('img[data-piece]');
-      const pv = img ? img.getAttribute('data-piece') : null;
-      if (!pv || pv.length < 2) return;
-      b[ri][fi] = pv[0].toLowerCase() + pv[1].toLowerCase();
+    const proc = spawn(process.execPath, [sfPath], {
+      stdio: ['pipe', 'pipe', 'pipe']
     });
 
-    const hasPieces = b.some(row => row.some(c => c !== null));
-    if (!hasPieces) return null;
+    const moves = [];
+    let bestMove = null;
+    let resolved = false;
+    let buffer = '';
 
-    let fen = '';
-    for (let r=0; r<8; r++) {
-      let e = 0, row = '';
-      for (let f=0; f<8; f++) {
-        const p = b[r][f];
-        if (!p) { e++; }
-        else { if(e){row+=e;e=0;} row += p[0]==='w' ? p[1].toUpperCase() : p[1]; }
+    const done = () => {
+      if (!resolved) {
+        resolved = true;
+        proc.kill();
+        resolve({ bestMove, moves: moves.filter(Boolean) });
       }
-      if (e) row += e;
-      fen += row + (r < 7 ? '/' : '');
-    }
-    return fen + ' ' + playerColor + ' KQkq - 0 1';
-  }
+    };
 
-  // ── Analysis ───────────────────────────────────────────
-  async function triggerAnalysis() {
-    if (isAnalyzing) return;
-    const fen = detectFen();
-    if (!fen) { setStatus('Board not detected', 'idle'); return; }
-    if (fen === currentFen) return;
-    currentFen = fen;
+    const timeout = setTimeout(done, moveTime + 200);
 
-    isAnalyzing = true;
-    setStatus('Analyzing...', 'thinking');
-
-    try {
-      const res = await fetch(`${SERVER}/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen, movetime: 2000 })
+    proc.stdout.on('data', (data) => {
+      buffer += data.toString();
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      lines.forEach(line => {
+        line = line.trim();
+        if (!line) return;
+        if (line.startsWith('info') && line.includes('multipv') && line.includes('score')) {
+          const m = line.match(/multipv (\d+).*?score (cp|mate) (-?\d+).*? pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
+          if (m) {
+            const idx = parseInt(m[1]) - 1;
+            const val = parseInt(m[3]);
+            const score = m[2] === 'mate'
+              ? (val > 0 ? `Mate in ${val}` : `Mated in ${Math.abs(val)}`)
+              : (val > 0 ? '+' : '') + (val / 100).toFixed(2);
+            moves[idx] = { move: m[4], score };
+          }
+        }
+        if (line.startsWith('bestmove')) {
+          const bm = line.split(' ')[1];
+          bestMove = bm && bm !== '(none)' ? bm : null;
+          clearTimeout(timeout);
+          done();
+        }
       });
-      const data = await res.json();
-      renderMoves(data.moves);
-    } catch(err) {
-      setStatus('Server error ✗', 'idle');
-    } finally {
-      isAnalyzing = false;
-    }
+    });
+
+    proc.stderr.on('data', () => {});
+    proc.on('error', (err) => { if (!resolved) { resolved = true; clearTimeout(timeout); reject(err); } });
+
+    proc.stdin.write('uci\n');
+    proc.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
+    proc.stdin.write('isready\n');
+    proc.stdin.write(`position fen ${fen}\n`);
+    proc.stdin.write(`go movetime ${moveTime} depth 20\n`);
+  });
+}
+
+app.get('/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
+
+app.post('/analyze', async (req, res) => {
+  const { fen, movetime = 2000 } = req.body;
+  if (!fen) return res.status(400).json({ error: 'FEN required' });
+  try {
+    const result = await analyzeWithStockfish(fen, 3, Math.min(movetime, 200));
+    console.log(`[analyze] best: ${result.bestMove}`);
+    res.json(result);
+  } catch (err) {
+    console.error('[analyze]', err.message);
+    res.status(500).json({ error: err.message });
   }
+});
 
-  // ── Polling setiap 1 detik ─────────────────────────────
-  setInterval(triggerAnalysis, 200);
+app.get('/inject.js', (req, res) => {
+  const serverUrl = 'https://' + req.get('host');
+  res.setHeader('Content-Type', 'application/javascript');
+  res.setHeader('Cache-Control', 'no-cache');
+  let script = fs.readFileSync(path.join(__dirname, 'static', 'bookmarklet.js'), 'utf8');
+  script = script.replace('https://YOUR-APP.railway.app', serverUrl);
+  res.send(script);
+});
 
-  setStatus('Connected ✓', 'on');
-  setTimeout(triggerAnalysis, 500);
-
-  console.log('[HCH] Loaded ✓');
-})();
+app.listen(PORT, () => console.log(`✓ Hustle Chess Helper running on port ${PORT}`));
