@@ -11,17 +11,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'static')));
 
-function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
+function analyzeWithStockfish(fen, multiPV = 3, moveTime = 2000) {
   return new Promise((resolve, reject) => {
-    // Cari path stockfish.js dari npm package
     let sfPath;
     try { sfPath = require.resolve('stockfish/src/stockfish.js'); }
-    catch {
-      try { sfPath = require.resolve('stockfish'); }
-      catch { return reject(new Error('Stockfish not found')); }
-    }
+    catch { try { sfPath = require.resolve('stockfish'); }
+    catch { return reject(new Error('Stockfish not found')); } }
 
-    // Jalankan sebagai child process Node.js
     const proc = spawn(process.execPath, [sfPath], {
       stdio: ['pipe', 'pipe', 'pipe']
     });
@@ -39,17 +35,15 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
       }
     };
 
-    const timeout = setTimeout(done,  + 4000);
+    const timeout = setTimeout(done, moveTime + 4000);
 
     proc.stdout.on('data', (data) => {
       buffer += data.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop();
-
       lines.forEach(line => {
         line = line.trim();
         if (!line) return;
-
         if (line.startsWith('info') && line.includes('multipv') && line.includes('score')) {
           const m = line.match(/multipv (\d+).*?score (cp|mate) (-?\d+).*? pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
           if (m) {
@@ -61,7 +55,6 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
             moves[idx] = { move: m[4], score };
           }
         }
-
         if (line.startsWith('bestmove')) {
           const bm = line.split(' ')[1];
           bestMove = bm && bm !== '(none)' ? bm : null;
@@ -86,10 +79,10 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
-  const { fen,  = 1500 } = req.body;
+  const { fen, movetime = 2000 } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
-    const result = await analyzeWithStockfish(fen, 3, Math.min(movetime, 200));
+    const result = await analyzeWithStockfish(fen, 3, Math.min(movetime, 3000));
     console.log(`[analyze] best: ${result.bestMove}`);
     res.json(result);
   } catch (err) {
