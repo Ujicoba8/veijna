@@ -1,6 +1,6 @@
 // Hustle Chess Helper - Bookmarklet Inject Script
 (function () {
-  const SERVER = 'https://YOUR-APP.railway.app';
+  const SERVER = 'https://hustle-chess-helper-production.up.railway.app';
 
   if (window.__hchLoaded) { console.log('[HCH] Already loaded'); return; }
   window.__hchLoaded = true;
@@ -181,37 +181,21 @@
         const sqn = sq.getAttribute('data-square');
         if (!sqn || sqn.length < 2) return;
 
-        const fi = sqn.charCodeAt(0) - 97; // a=0, h=7
-        const ri = 8 - parseInt(sqn[1]);   // 8=0, 1=7
+        const fi = sqn.charCodeAt(0) - 97;
+        const ri = 8 - parseInt(sqn[1]);
         if (fi < 0 || fi > 7 || ri < 0 || ri > 7) return;
 
-        // Try data-piece attribute directly on square or child
-        let pieceVal = sq.getAttribute('data-piece');
-
-        // Try img with data-piece inside square
-        if (!pieceVal) {
-          const img = sq.querySelector('[data-piece]');
-          if (img) pieceVal = img.getAttribute('data-piece');
-        }
-
-        // Try class-based piece (wK, bR etc)
-        if (!pieceVal) {
-          const pc = sq.querySelector('[class*="piece"]');
-          if (pc) {
-            const cls = pc.className || '';
-            const m2 = cls.match(/([wb])([PRNBQK])/);
-            if (m2) pieceVal = m2[1] + m2[2];
-          }
-        }
+        // Hustle Chess: data-piece ada di <img> di dalam square
+        const img = sq.querySelector('img[data-piece]');
+        let pieceVal = img ? img.getAttribute('data-piece') : sq.getAttribute('data-piece');
 
         if (!pieceVal || pieceVal.length < 2) return;
 
-        const color = pieceVal[0].toLowerCase(); // w or b
-        const type  = pieceVal[1].toLowerCase(); // p,r,n,b,q,k
+        const color = pieceVal[0].toLowerCase();
+        const type  = pieceVal[1].toLowerCase();
         board[ri][fi] = color + type;
       });
 
-      // Check board has pieces
       const hasPieces = board.some(row => row.some(cell => cell !== null));
       if (!hasPieces) return null;
 
