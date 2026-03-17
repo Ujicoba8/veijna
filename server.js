@@ -2,23 +2,23 @@ const express = require('express');
 const cors = require('cors');
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('static'));
+app.use(express.static(path.join(__dirname, 'static')));
 
 // ── Stockfish helper ───────────────────────────────────────
 function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
   return new Promise((resolve, reject) => {
-    // Try to find stockfish binary (Railway / npm)
     let sfPath;
     try {
       sfPath = require.resolve('stockfish/src/stockfish.js');
     } catch {
-      sfPath = 'stockfish'; // system binary fallback
+      sfPath = 'stockfish';
     }
 
     const sf = spawn('node', [sfPath], { stdio: ['pipe', 'pipe', 'pipe'] });
@@ -39,7 +39,6 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
       lines.forEach(line => {
         line = line.trim();
 
-        // Parse multipv info lines
         if (line.startsWith('info') && line.includes('pv') && line.includes('score')) {
           const pvMatch = line.match(
             /multipv (\d+).*?score (cp|mate) (-?\d+).*? pv ([a-h][1-8][a-h][1-8][qrbn]?)/
@@ -62,7 +61,6 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
           }
         }
 
-        // bestmove line — we're done
         if (line.startsWith('bestmove')) {
           const parts = line.split(' ');
           bestMove = parts[1] !== '(none)' ? parts[1] : null;
@@ -77,7 +75,7 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
       });
     });
 
-    sf.stderr.on('data', () => {}); // suppress stderr
+    sf.stderr.on('data', () => {});
 
     sf.on('error', (err) => {
       if (!resolved) {
@@ -87,7 +85,6 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
       }
     });
 
-    // Send UCI commands
     sf.stdin.write('uci\n');
     sf.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
     sf.stdin.write('isready\n');
@@ -98,25 +95,17 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
 
 // ── Routes ─────────────────────────────────────────────────
 
-// Health check
-app.get('/', (req, res) => {
-  res.json({ status: 'ok', message: 'Hustle Chess Helper Server running ✓' });
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', message: 'Hustle Chess Helper running ✓' });
 });
 
-// Main analysis endpoint
-// POST /analyze  { fen: "...", movetime: 1500 }
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'static', 'index.html'));
+});
+
 app.post('/analyze', async (req, res) => {
   const { fen, movetime = 1500 } = req.body;
-
-  if (!fen) {
-    return res.status(400).json({ error: 'FEN required' });
-  }
-
-  // Basic FEN validation
-  const fenParts = fen.trim().split(' ');
-  if (fenParts.length < 1) {
-    return res.status(400).json({ error: 'Invalid FEN' });
-  }
+  if (!fen) return res.status(400).json({ error: 'FEN required' });
 
   try {
     console.log(`[analyze] FEN: ${fen.substring(0, 40)}...`);
@@ -129,13 +118,9 @@ app.post('/analyze', async (req, res) => {
   }
 });
 
-// GET /analyze?fen=...  (simpler for bookmarklet)
 app.get('/analyze', async (req, res) => {
   const { fen, movetime = 1500 } = req.query;
-
-  if (!fen) {
-    return res.status(400).json({ error: 'FEN required' });
-  }
+  if (!fen) return res.status(400).json({ error: 'FEN required' });
 
   try {
     const result = await analyzeWithStockfish(fen, 3, Math.min(parseInt(movetime), 3000));
@@ -145,20 +130,16 @@ app.get('/analyze', async (req, res) => {
   }
 });
 
-// Serve bookmarklet script
 app.get('/inject.js', (req, res) => {
   const serverUrl = req.protocol + '://' + req.get('host');
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Cache-Control', 'no-cache');
 
-  // Inject bookmarklet with dynamic server URL
-  const fs = require('fs');
- let script = fs.readFileSync(path.join(__dirname, 'static', 'bookmarklet.js'), 'utf8');
-  script = script.replace('__SERVER_URL__', serverUrl);
+  let script = fs.readFileSync(path.join(__dirname, 'static', 'bookmarklet.js'), 'utf8');
+  script = script.replace('https://YOUR-APP.railway.app', serverUrl);
   res.send(script);
 });
 
-// ── Start ──────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`✓ Hustle Chess Helper running on port ${PORT}`);
 });
