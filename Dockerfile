@@ -1,12 +1,12 @@
-FROM node:20-alpine
+FROM node:20-slim
+
+# Install stockfish binary (versi terbaru, jauh lebih kuat dari npm)
+RUN apt-get update && apt-get install -y stockfish && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
 COPY package*.json ./
 RUN npm install
-
 COPY . .
 
 EXPOSE 3000
-
 CMD ["node", "server.js"]
