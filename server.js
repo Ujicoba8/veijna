@@ -90,7 +90,7 @@ app.post('/analyze', async (req, res) => {
   const { fen, movetime = 300, mode = 'normal' } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
-    const mt = Math.min(parseInt(movetime) || 100, 100);
+    const mt = Math.min(parseInt(movetime) || 150, 150);
     const isMate = mode === 'mate';
     const multiPV = isMate ? 1 : 3;
     const result = await runStockfish(fen, multiPV, mt, isMate);
