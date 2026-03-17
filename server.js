@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,28 +12,34 @@ app.use(express.static(path.join(__dirname, 'static')));
 
 function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
   return new Promise((resolve, reject) => {
-    // stockfish v10 exports a function
-    let Stockfish;
-    try { Stockfish = require('stockfish'); } 
-    catch { return reject(new Error('Stockfish not found')); }
+    let sf;
+    try {
+      const stockfish = require('stockfish');
+      // v10 bisa export function atau object
+      sf = typeof stockfish === 'function' ? stockfish() : stockfish;
+      if (!sf) throw new Error('Cannot init stockfish');
+    } catch(e) {
+      return reject(new Error('Stockfish init failed: ' + e.message));
+    }
 
-    const sf = Stockfish();
     const moves = [];
     let bestMove = null;
     let resolved = false;
 
-    const timeout = setTimeout(() => {
+    const done = () => {
       if (!resolved) {
         resolved = true;
         resolve({ bestMove, moves: moves.filter(Boolean) });
       }
-    }, moveTime + 3000);
+    };
 
-    sf.onmessage = (line) => {
+    const timeout = setTimeout(done, moveTime + 3000);
+
+    // stockfish v10 pakai addMessageListener
+    const handler = (line) => {
       if (typeof line !== 'string') return;
-      console.log('[sf]', line);
 
-      if (line.startsWith('info') && line.includes('pv') && line.includes('score')) {
+      if (line.startsWith('info') && line.includes('multipv') && line.includes('score')) {
         const m = line.match(/multipv (\d+).*?score (cp|mate) (-?\d+).*? pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
         if (m) {
           const idx = parseInt(m[1]) - 1;
@@ -49,19 +54,31 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
       if (line.startsWith('bestmove')) {
         const bm = line.split(' ')[1];
         bestMove = bm && bm !== '(none)' ? bm : null;
-        if (!resolved) {
-          resolved = true;
-          clearTimeout(timeout);
-          resolve({ bestMove, moves: moves.filter(Boolean) });
-        }
+        clearTimeout(timeout);
+        done();
       }
     };
 
-    sf.postMessage('uci');
-    sf.postMessage(`setoption name MultiPV value ${multiPV}`);
-    sf.postMessage('isready');
-    sf.postMessage(`position fen ${fen}`);
-    sf.postMessage(`go movetime ${moveTime}`);
+    // Try different listener APIs
+    if (typeof sf.addMessageListener === 'function') {
+      sf.addMessageListener(handler);
+    } else if (typeof sf.onmessage !== 'undefined') {
+      sf.onmessage = handler;
+    } else {
+      return reject(new Error('No message listener API found'));
+    }
+
+    // Try different postMessage APIs
+    const send = (msg) => {
+      if (typeof sf.postMessage === 'function') sf.postMessage(msg);
+      else if (typeof sf.send === 'function') sf.send(msg);
+    };
+
+    send('uci');
+    send(`setoption name MultiPV value ${multiPV}`);
+    send('isready');
+    send(`position fen ${fen}`);
+    send(`go movetime ${moveTime}`);
   });
 }
 
