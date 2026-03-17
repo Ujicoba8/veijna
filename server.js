@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'static')));
 
-function analyzeWithStockfish(fen, multiPV = 3, moveTime = 2000) {
+function analyzeWithStockfish(fen, multiPV = 3, moveTime = 200) {
   return new Promise((resolve, reject) => {
     let sfPath;
     try { sfPath = require.resolve('stockfish/src/stockfish.js'); }
