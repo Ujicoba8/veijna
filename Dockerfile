@@ -1,7 +1,9 @@
 FROM node:20-slim
 
-# Install stockfish binary (versi terbaru, jauh lebih kuat dari npm)
-RUN apt-get update && apt-get install -y stockfish && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+    apt-get install -y stockfish --no-install-recommends && \
+    ln -sf /usr/games/stockfish /usr/local/bin/stockfish && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY package*.json ./
