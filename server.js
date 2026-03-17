@@ -48,7 +48,7 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
       }
     };
 
-    const timeout = setTimeout(done, moveTime + 1000);
+    const timeout = setTimeout(done, moveTime + 100);
 
     proc.stdout.on('data', (data) => {
       buffer += data.toString();
@@ -105,10 +105,10 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
-  const { fen, movetime = 300, mode = 'normal' } = req.body;
+  const { fen, movetime = 100, mode = 'normal' } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
-    const mt = Math.min(parseInt(movetime) || 300, 1000);
+    const mt = Math.min(parseInt(movetime) || 100, 100);
     const isMate = mode === 'mate';
     const result = await runStockfish(fen, isMate ? 1 : 3, mt, isMate);
 
