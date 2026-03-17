@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
-app.use(express.static('public'));
+app.use(express.static('static'));
 
 // ── Stockfish helper ───────────────────────────────────────
 function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
@@ -153,7 +153,7 @@ app.get('/inject.js', (req, res) => {
 
   // Inject bookmarklet with dynamic server URL
   const fs = require('fs');
-  let script = fs.readFileSync(path.join(__dirname, 'public', 'bookmarklet.js'), 'utf8');
+ let script = fs.readFileSync(path.join(__dirname, 'static', 'bookmarklet.js'), 'utf8');
   script = script.replace('__SERVER_URL__', serverUrl);
   res.send(script);
 });
