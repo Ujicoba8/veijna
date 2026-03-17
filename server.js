@@ -82,7 +82,7 @@ app.post('/analyze', async (req, res) => {
   const { fen, movetime = 2000 } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
-    const result = await analyzeWithStockfish(fen, 3, Math.min(movetime, 3000));
+    const result = await analyzeWithStockfish(fen, 3, Math.min(movetime, 200));
     console.log(`[analyze] best: ${result.bestMove}`);
     res.json(result);
   } catch (err) {
