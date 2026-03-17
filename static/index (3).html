@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hustle Chess Helper</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Rajdhani:wght@500;600;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --gold: #c9a84c;
+      --gold-dim: #c9a84c44;
+      --bg: #090909;
+      --surface: #111;
+      --border: #222;
+      --text: #e8e8e8;
+      --muted: #666;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Rajdhani', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+    }
+
+    /* bg grid */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(201,168,76,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(201,168,76,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+    }
+
+    .card {
+      position: relative;
+      background: var(--surface);
+      border: 1px solid var(--gold-dim);
+      border-radius: 14px;
+      padding: 40px;
+      max-width: 520px;
+      width: 100%;
+      box-shadow: 0 0 60px rgba(201,168,76,0.08);
+    }
+
+    .logo {
+      font-size: 36px;
+      text-align: center;
+      margin-bottom: 8px;
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--gold);
+      text-align: center;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: var(--muted);
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      margin-bottom: 32px;
+      letter-spacing: 0.05em;
+    }
+
+    .steps { display: flex; flex-direction: column; gap: 16px; margin-bottom: 28px; }
+
+    .step {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      padding: 14px 16px;
+      background: #0d0d0d;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .step-num {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: var(--gold-dim);
+      border: 1px solid var(--gold);
+      color: var(--gold);
+      font-weight: 700;
+      font-size: 13px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .step-text { font-size: 14px; line-height: 1.5; color: #bbb; }
+    .step-text strong { color: var(--text); }
+
+    /* Bookmarklet drag button */
+    .bm-wrap {
+      background: #0a0a0a;
+      border: 1px dashed var(--gold);
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .bm-label {
+      font-family: 'Space Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    #bm-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #1a1400, #2c1f00);
+      border: 1px solid var(--gold);
+      color: var(--gold);
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-family: 'Rajdhani', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: grab;
+      text-decoration: none;
+      letter-spacing: 0.05em;
+      transition: box-shadow 0.2s;
+      box-shadow: 0 0 0 rgba(201,168,76,0);
+    }
+
+    #bm-btn:hover {
+      box-shadow: 0 0 20px rgba(201,168,76,0.3);
+    }
+
+    .bm-hint {
+      font-size: 11px;
+      color: #444;
+      margin-top: 10px;
+      font-family: 'Space Mono', monospace;
+    }
+
+    .status-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 14px;
+      background: #0d0d0d;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: 'Space Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #4caf50; box-shadow: 0 0 6px #4caf5077; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">♟</div>
+    <h1>Chess Helper</h1>
+    <p class="subtitle">Real-time Stockfish suggestions for Hustle Chess</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-text">
+          <strong>Drag</strong> tombol di bawah ke <strong>Bookmarks Bar</strong> browser kamu
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-text">
+          Buka <strong>hustle-chess.com</strong> dan mulai game
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-text">
+          Klik bookmark <strong>♟ Chess Helper</strong> — panel akan muncul otomatis
+        </div>
+      </div>
+    </div>
+
+    <div class="bm-wrap">
+      <div class="bm-label">⬇ Drag ke bookmarks bar</div>
+      <a id="bm-btn" href="#">♟ Chess Helper</a>
+      <div class="bm-hint">drag & drop ke toolbar atas</div>
+    </div>
+
+    <div class="status-bar">
+      <div class="dot"></div>
+      <span id="server-status">Server online ✓</span>
+    </div>
+  </div>
+
+  <script>
+    // Set bookmarklet href dynamically
+    const SERVER = window.location.origin;
+    const bookmarkletCode = `javascript:(function(){var s=document.createElement('script');s.src='${SERVER}/inject.js?t='+Date.now();document.head.appendChild(s);})();`;
+    document.getElementById('bm-btn').href = bookmarkletCode;
+
+    // Ping server
+    fetch('/').then(r => r.json()).then(d => {
+      document.getElementById('server-status').textContent = 'Server online ✓  |  ' + d.message;
+    }).catch(() => {
+      document.getElementById('server-status').textContent = 'Server offline ✗';
+    });
+  </script>
+</body>
+</html>
