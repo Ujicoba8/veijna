@@ -209,7 +209,7 @@
     try {
       const res = await fetch(`${SERVER}/analyze`, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ fen, movetime: mode==='mate'?600:200, mode })
+        body: JSON.stringify({ fen, movetime: mode==='mate'?300:200, mode })
       });
       const data = await res.json();
       renderMoves(data.moves, turn);
