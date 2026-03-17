@@ -124,9 +124,10 @@
       if (!histEl) return null;
       let text = histEl.textContent || '';
       // Fix: "c52." → "c5 2." — tambah spasi sebelum nomor move
+// Fix castling DULU sebelum yang lain
+text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');
 text = text.replace(/([a-zA-Z][1-8])(\d+\.)/g, '$1 $2');
 text = text.replace(/([+#!?])(\d+\.)/g, '$1 $2');
-text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');
       const chess = new Chess();
       const tokens = text.split(/\s+/).filter(t =>
         t.length >= 2 &&
@@ -211,7 +212,7 @@ text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');
     try {
       const res = await fetch(`${SERVER}/analyze`, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ fen, movetime: mode==='mate'?50:50, mode })
+        body: JSON.stringify({ fen, movetime: mode==='mate'?150:150, mode })
       });
       const data = await res.json();
       renderMoves(data.moves, turn);
@@ -224,8 +225,8 @@ text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');
 
   loadChessJs(() => {
     setStatus('Connected ✓','on');
-    setInterval(triggerAnalysis, 50);
-    setTimeout(triggerAnalysis, 50);
+    setInterval(triggerAnalysis, 150);
+    setTimeout(triggerAnalysis, 150);
   });
 
   console.log('[HCH] Loaded ✓');
