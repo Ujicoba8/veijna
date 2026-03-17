@@ -1,6 +1,6 @@
 // Hustle Chess Helper - Bookmarklet Inject Script
 (function () {
-  const SERVER = 'https://hustle-chess-helper-production.up.railway.app';
+  const SERVER = 'https://YOUR-APP.railway.app';
 
   if (window.__hchLoaded) { console.log('[HCH] Already loaded'); return; }
   window.__hchLoaded = true;
