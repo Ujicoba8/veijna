@@ -13,8 +13,10 @@ app.use(express.static(path.join(__dirname, 'static')));
 
 function runStockfish(commands, moveTime = 200) {
   return new Promise((resolve, reject) => {
-    let sfBin = 'stockfish'; try { require.resolve('stockfish/src/stockfish.js'); sfBin = process.execPath; } catch {} const sfArgs = sfBin === process.execPath ? [require.resolve('stockfish/src/stockfish.js')] : []; const proc = spawn(sfBin, sfArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
-    const moves = [];
+let sfBin = 'stockfish';
+try { require.resolve('stockfish/src/stockfish.js'); sfBin = process.execPath; } catch {}
+const sfArgs = sfBin === process.execPath ? [require.resolve('stockfish/src/stockfish.js')] : [];
+const proc = spawn(sfBin, sfArgs, { stdio: ['pipe', 'pipe', 'pipe'] });    const moves = [];
     let bestMove = null;
     let resolved = false;
     let buffer = '';
