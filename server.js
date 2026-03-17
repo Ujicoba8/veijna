@@ -47,20 +47,20 @@ const proc = spawn(sfBin, sfArgs, { stdio: ['pipe', 'pipe', 'pipe'] });    const
         if (line.startsWith('bestmove')) {
           const bm = line.split(' ')[1];
           bestMove = bm && bm !== '(none)' ? bm : null;
-          clearTimeout(timeout);
+          clearout(out);
           done();
         }
       });
     });
 
     proc.stderr.on('data', () => {});
-    proc.on('error', (err) => { if (!resolved) { resolved = true; clearTimeout(timeout); reject(err); } });
+    proc.on('error', (err) => { if (!resolved) { resolved = true; clearout(out); reject(err); } });
 
     commands.forEach(cmd => proc.stdin.write(cmd + '\n'));
   });
 }
 
-function analyzeNormal(fen, multiPV = 3, moveTime = 200) {
+function analyzeNormal(fen, multiPV = 3, move = 200) {
   return runStockfish([
     'uci',
     `setoption name MultiPV value ${multiPV}`,
@@ -68,11 +68,11 @@ function analyzeNormal(fen, multiPV = 3, moveTime = 200) {
     'setoption name Hash value 128',
     'isready',
     `position fen ${fen}`,
-    `go movetime ${moveTime} depth 25`
-  ], moveTime);
+    `go move ${move} depth 25`
+  ], move);
 }
 
-function analyzeMate(fen, moveTime = 200) {
+function analyzeMate(fen, move = 200) {
   // Cari mate dalam 1-10 langkah
   return runStockfish([
     'uci',
@@ -81,27 +81,27 @@ function analyzeMate(fen, moveTime = 200) {
     'setoption name Hash value 128',
     'isready',
     `position fen ${fen}`,
-    `go movetime ${moveTime} depth 30 mate 10`
-  ], moveTime);
+    `go move ${move} depth 30 mate 10`
+  ], move);
 }
 
 app.get('/health', (req, res) => res.json({ status: 'ok', engine: 'stockfish-binary' }));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
-  const { fen, movetime = 2000, mode = 'normal' } = req.body;
+  const { fen, move = 2000, mode = 'normal' } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
     let result;
     if (mode === 'mate') {
       // Coba cari mate dulu, kalau tidak ada fallback ke normal
-      result = await analyzeMate(fen, Math.min(movetime, 200));
+      result = await analyzeMate(fen, Math.min(move, 200));
       if (!result.bestMove || !result.moves.some(m => m.type === 'mate')) {
-        const normal = await analyzeNormal(fen, 3, Math.min(movetime, 3000));
+        const normal = await analyzeNormal(fen, 3, Math.min(move, 200));
         result = normal;
       }
     } else {
-      result = await analyzeNormal(fen, 3, Math.min(movetime, 3000));
+      result = await analyzeNormal(fen, 3, Math.min(movetime, 200));
     }
     console.log(`[${mode}] best: ${result.bestMove}`);
     res.json(result);
