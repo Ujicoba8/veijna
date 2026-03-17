@@ -11,19 +11,30 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'static')));
 
-function runStockfish(commands, moveTime = 200) {
+function runStockfish(fen, multiPV, moveTime, mateSearch) {
   return new Promise((resolve, reject) => {
-let sfBin = 'stockfish';
-try { require.resolve('stockfish/src/stockfish.js'); sfBin = process.execPath; } catch {}
-const sfArgs = sfBin === process.execPath ? [require.resolve('stockfish/src/stockfish.js')] : [];
-const proc = spawn(sfBin, sfArgs, { stdio: ['pipe', 'pipe', 'pipe'] });    const moves = [];
+    let sfBin = 'stockfish';
+    let sfArgs = [];
+    try {
+      const sfPath = require.resolve('stockfish/src/stockfish.js');
+      sfBin = process.execPath;
+      sfArgs = [sfPath];
+    } catch {}
+
+    const proc = spawn(sfBin, sfArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const moves = [];
     let bestMove = null;
     let resolved = false;
     let buffer = '';
 
     const done = () => {
-      if (!resolved) { resolved = true; proc.kill(); resolve({ bestMove, moves: moves.filter(Boolean) }); }
+      if (!resolved) {
+        resolved = true;
+        try { proc.kill(); } catch {}
+        resolve({ bestMove, moves: moves.filter(Boolean) });
+      }
     };
+
     const timeout = setTimeout(done, moveTime + 200);
 
     proc.stdout.on('data', (data) => {
@@ -41,68 +52,55 @@ const proc = spawn(sfBin, sfArgs, { stdio: ['pipe', 'pipe', 'pipe'] });    const
             const score = m[2] === 'mate'
               ? (val > 0 ? `Mate in ${val}` : `Mated in ${Math.abs(val)}`)
               : (val > 0 ? '+' : '') + (val / 100).toFixed(2);
-            moves[idx] = { move: m[4], score, raw: val, type: m[2] };
+            moves[idx] = { move: m[4], score };
           }
         }
         if (line.startsWith('bestmove')) {
           const bm = line.split(' ')[1];
           bestMove = bm && bm !== '(none)' ? bm : null;
-          clearout(out);
+          clearTimeout(timeout);
           done();
         }
       });
     });
 
     proc.stderr.on('data', () => {});
-    proc.on('error', (err) => { if (!resolved) { resolved = true; clearout(out); reject(err); } });
+    proc.on('error', (err) => {
+      if (!resolved) { resolved = true; clearTimeout(timeout); reject(err); }
+    });
 
-    commands.forEach(cmd => proc.stdin.write(cmd + '\n'));
+    proc.stdin.write('uci\n');
+    proc.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
+    proc.stdin.write('setoption name Threads value 2\n');
+    proc.stdin.write('setoption name Hash value 128\n');
+    proc.stdin.write('isready\n');
+    proc.stdin.write(`position fen ${fen}\n`);
+    if (mateSearch) {
+      proc.stdin.write(`go movetime ${moveTime} depth 30 mate 10\n`);
+    } else {
+      proc.stdin.write(`go movetime ${moveTime} depth 25\n`);
+    }
   });
 }
 
-function analyzeNormal(fen, multiPV = 3, move = 200) {
-  return runStockfish([
-    'uci',
-    `setoption name MultiPV value ${multiPV}`,
-    'setoption name Threads value 2',
-    'setoption name Hash value 128',
-    'isready',
-    `position fen ${fen}`,
-    `go move ${move} depth 25`
-  ], move);
-}
-
-function analyzeMate(fen, move = 200) {
-  // Cari mate dalam 1-10 langkah
-  return runStockfish([
-    'uci',
-    'setoption name MultiPV value 1',
-    'setoption name Threads value 2',
-    'setoption name Hash value 128',
-    'isready',
-    `position fen ${fen}`,
-    `go move ${move} depth 30 mate 10`
-  ], move);
-}
-
-app.get('/health', (req, res) => res.json({ status: 'ok', engine: 'stockfish-binary' }));
+app.get('/health', (req, res) => res.json({ status: 'ok', engine: 'stockfish' }));
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
-  const { fen, move = 2000, mode = 'normal' } = req.body;
+  const { fen, movetime = 300, mode = 'normal' } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
-    let result;
-    if (mode === 'mate') {
-      // Coba cari mate dulu, kalau tidak ada fallback ke normal
-      result = await analyzeMate(fen, Math.min(move, 200));
-      if (!result.bestMove || !result.moves.some(m => m.type === 'mate')) {
-        const normal = await analyzeNormal(fen, 3, Math.min(move, 200));
-        result = normal;
-      }
-    } else {
-      result = await analyzeNormal(fen, 3, Math.min(movetime, 200));
+    const mt = Math.min(parseInt(movetime) || 100, 100);
+    const isMate = mode === 'mate';
+    const multiPV = isMate ? 1 : 3;
+    const result = await runStockfish(fen, multiPV, mt, isMate);
+
+    // Kalau mate mode tapi tidak nemu mate, fallback ke normal
+    if (isMate && !result.moves.some(m => m.score.includes('Mate'))) {
+      const fallback = await runStockfish(fen, 3, mt, false);
+      return res.json(fallback);
     }
+
     console.log(`[${mode}] best: ${result.bestMove}`);
     res.json(result);
   } catch (err) {
