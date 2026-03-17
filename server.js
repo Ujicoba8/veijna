@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -11,17 +11,30 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'static')));
 
+// Detect stockfish binary atau npm
+function getStockfishCmd() {
+  try {
+    execSync('which stockfish', { stdio: 'ignore' });
+    return { bin: 'stockfish', args: [] };
+  } catch {}
+  try {
+    const sfPath = require.resolve('stockfish/src/stockfish.js');
+    return { bin: process.execPath, args: [sfPath] };
+  } catch {}
+  try {
+    const sfPath = require.resolve('stockfish');
+    return { bin: process.execPath, args: [sfPath] };
+  } catch {}
+  throw new Error('Stockfish not found');
+}
+
 function runStockfish(fen, multiPV, moveTime, mateSearch) {
   return new Promise((resolve, reject) => {
-    let sfBin = 'stockfish';
-    let sfArgs = [];
-    try {
-      const sfPath = require.resolve('stockfish/src/stockfish.js');
-      sfBin = process.execPath;
-      sfArgs = [sfPath];
-    } catch {}
+    let sfCmd;
+    try { sfCmd = getStockfishCmd(); }
+    catch(e) { return reject(e); }
 
-    const proc = spawn(sfBin, sfArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn(sfCmd.bin, sfCmd.args, { stdio: ['pipe', 'pipe', 'pipe'] });
     const moves = [];
     let bestMove = null;
     let resolved = false;
@@ -35,7 +48,7 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
       }
     };
 
-    const timeout = setTimeout(done, moveTime + 200);
+    const timeout = setTimeout(done, moveTime + 1000);
 
     proc.stdout.on('data', (data) => {
       buffer += data.toString();
@@ -83,19 +96,22 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
   });
 }
 
-app.get('/health', (req, res) => res.json({ status: 'ok', engine: 'stockfish' }));
+app.get('/health', (req, res) => {
+  let engine = 'stockfish-npm';
+  try { execSync('which stockfish', { stdio: 'ignore' }); engine = 'stockfish-binary'; } catch {}
+  res.json({ status: 'ok', engine });
+});
+
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
   const { fen, movetime = 300, mode = 'normal' } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
-    const mt = Math.min(parseInt(movetime) || 150, 150);
+    const mt = Math.min(parseInt(movetime) || 300, 1000);
     const isMate = mode === 'mate';
-    const multiPV = isMate ? 1 : 3;
-    const result = await runStockfish(fen, multiPV, mt, isMate);
+    const result = await runStockfish(fen, isMate ? 1 : 3, mt, isMate);
 
-    // Kalau mate mode tapi tidak nemu mate, fallback ke normal
     if (isMate && !result.moves.some(m => m.score.includes('Mate'))) {
       const fallback = await runStockfish(fen, 3, mt, false);
       return res.json(fallback);
