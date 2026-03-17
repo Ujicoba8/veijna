@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const { Worker } = require('worker_threads');
+const { spawn } = require('child_process');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -13,22 +13,27 @@ app.use(express.static(path.join(__dirname, 'static')));
 
 function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
   return new Promise((resolve, reject) => {
-    let sfPath;
-    try { sfPath = require.resolve('stockfish'); }
-    catch { try { sfPath = require.resolve('stockfish/src/stockfish.js'); }
-    catch { return reject(new Error('Stockfish not found')); } }
+    // stockfish v10 exports a function
+    let Stockfish;
+    try { Stockfish = require('stockfish'); } 
+    catch { return reject(new Error('Stockfish not found')); }
 
-    const worker = new Worker(sfPath);
+    const sf = Stockfish();
     const moves = [];
     let bestMove = null;
     let resolved = false;
 
     const timeout = setTimeout(() => {
-      if (!resolved) { resolved = true; worker.terminate(); resolve({ bestMove, moves: moves.filter(Boolean) }); }
+      if (!resolved) {
+        resolved = true;
+        resolve({ bestMove, moves: moves.filter(Boolean) });
+      }
     }, moveTime + 3000);
 
-    worker.on('message', (line) => {
+    sf.onmessage = (line) => {
       if (typeof line !== 'string') return;
+      console.log('[sf]', line);
+
       if (line.startsWith('info') && line.includes('pv') && line.includes('score')) {
         const m = line.match(/multipv (\d+).*?score (cp|mate) (-?\d+).*? pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
         if (m) {
@@ -40,19 +45,23 @@ function analyzeWithStockfish(fen, multiPV = 3, moveTime = 1500) {
           moves[idx] = { move: m[4], score };
         }
       }
+
       if (line.startsWith('bestmove')) {
-        bestMove = line.split(' ')[1] !== '(none)' ? line.split(' ')[1] : null;
-        if (!resolved) { resolved = true; clearTimeout(timeout); worker.terminate(); resolve({ bestMove, moves: moves.filter(Boolean) }); }
+        const bm = line.split(' ')[1];
+        bestMove = bm && bm !== '(none)' ? bm : null;
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          resolve({ bestMove, moves: moves.filter(Boolean) });
+        }
       }
-    });
+    };
 
-    worker.on('error', (err) => { if (!resolved) { resolved = true; clearTimeout(timeout); reject(err); } });
-
-    worker.postMessage('uci');
-    worker.postMessage(`setoption name MultiPV value ${multiPV}`);
-    worker.postMessage('isready');
-    worker.postMessage(`position fen ${fen}`);
-    worker.postMessage(`go movetime ${moveTime}`);
+    sf.postMessage('uci');
+    sf.postMessage(`setoption name MultiPV value ${multiPV}`);
+    sf.postMessage('isready');
+    sf.postMessage(`position fen ${fen}`);
+    sf.postMessage(`go movetime ${moveTime}`);
   });
 }
 
