@@ -196,24 +196,29 @@
 
   // FEN from move history
   function getFenFromHistory() {
-    if (!window.Chess) return null;
-    try {
-      const histEl = document.querySelector('[class*="move-history"], [class*="moveHistory"], [class*="history"]');
-      if (!histEl) return null;
-      const text = histEl.textContent || '';
-      const moveMatches = text.match(/\d+\.\s*(\S+)(?:\s+(\S+))?/g);
-      if (!moveMatches) return null;
-      const chess = new Chess();
-      for (const match of moveMatches) {
-        const parts = match.replace(/\d+\./, '').trim().split(/\s+/);
-        for (const move of parts) {
-          if (!move || move === '...' || move.match(/^\d+$/)) continue;
-          try { chess.move(move); } catch(e) { break; }
-        }
+  if (!window.Chess) return null;
+  try {
+    const histEl = document.querySelector('[class*="move-history"], [class*="moveHistory"], [class*="history"]');
+    if (!histEl) return null;
+    const text = histEl.textContent || '';
+    
+    // Fix: tambah spasi sebelum angka move (misal "c52." → "c5 2.")
+    const fixed = text.replace(/(\S)(\d+\.)/g, '$1 $2');
+    
+    const chess = new Chess();
+    const moveMatches = fixed.match(/\d+\.\s*(\S+)(?:\s+(\S+))?/g);
+    if (!moveMatches) return null;
+    
+    for (const match of moveMatches) {
+      const parts = match.replace(/\d+\./, '').trim().split(/\s+/);
+      for (const move of parts) {
+        if (!move || move === '...' || move.match(/^\d+$/)) continue;
+        try { chess.move(move); } catch(e) { break; }
       }
-      return chess.fen();
-    } catch(e) { return null; }
-  }
+    }
+    return chess.fen();
+  } catch(e) { return null; }
+}
 
   // FEN from DOM
   function getFenFromDOM(turn = 'w') {
