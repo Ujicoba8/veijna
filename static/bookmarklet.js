@@ -1,6 +1,6 @@
 // Hustle Chess Helper - Bookmarklet Inject Script
 (function () {
-  const SERVER = 'https://hustle-chess-helper-production.up.railway.app';
+  const SERVER = 'https://YOUR-APP.railway.app';
 
   if (window.__hchLoaded) { console.log('[HCH] Already loaded'); return; }
   window.__hchLoaded = true;
@@ -9,6 +9,7 @@
   let playerColor = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
   let isAnalyzing = false;
   let mode = 'normal';
+  let bestMoveUci = null;
 
   function loadChessJs(cb) {
     if (window.Chess) { cb(); return; }
@@ -40,7 +41,8 @@
     .hch-mode-btn.mate-btn.active { background:#1a0010;border-color:#e040fb;color:#e040fb; }
     .hch-moves { display:flex;flex-direction:column;gap:5px;margin-bottom:10px; }
     .hch-empty { font-family:'Space Mono',monospace;font-size:11px;color:#444;text-align:center;padding:10px 0; }
-    .hch-row { display:flex;align-items:center;gap:8px;padding:8px 10px;background:#111;border:1px solid #222;border-radius:6px; }
+    .hch-row { display:flex;align-items:center;gap:8px;padding:8px 10px;background:#111;border:1px solid #222;border-radius:6px;cursor:pointer;transition:border-color 0.15s; }
+    .hch-row:hover { border-color:#c9a84c55; }
     .hch-row.top { background:linear-gradient(135deg,#1a1400,#201800);border-color:#c9a84c55; }
     .hch-row.mate-move { background:linear-gradient(135deg,#1a0010,#200018);border-color:#e040fb55; }
     .hch-rank { font-size:12px;color:#555;width:14px;text-align:center;flex-shrink:0; }
@@ -57,6 +59,15 @@
     .hch-color-lbl { font-family:'Space Mono',monospace;font-size:10px;color:#555; }
     .hch-color-lbl strong { color:#c9a84c; }
     .hch-toggle { background:#c9a84c22;border:1px solid #c9a84c55;color:#c9a84c;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;font-family:'Rajdhani',sans-serif;font-weight:700; }
+
+    /* Board highlight overlays */
+    .hch-sq-highlight {
+      position:absolute; pointer-events:none; z-index:9999;
+      border-radius:3px; transition:all 0.2s;
+    }
+    .hch-sq-from { background:rgba(255,215,0,0.5); border:3px solid rgba(255,215,0,0.9); }
+    .hch-sq-to   { background:rgba(50,205,50,0.5); border:3px solid rgba(50,205,50,0.9); }
+    .hch-arrow-svg { position:absolute; pointer-events:none; z-index:9998; }
   `;
   document.head.appendChild(style);
 
@@ -84,8 +95,8 @@
 
   let minimized = false;
   document.getElementById('hch-min').onclick = () => { minimized=!minimized; document.getElementById('hch-body').style.display=minimized?'none':'block'; document.getElementById('hch-min').textContent=minimized?'+':'−'; };
-  document.getElementById('hch-close').onclick = () => { panel.remove(); window.__hchLoaded=false; };
-  document.getElementById('hch-toggle').onclick = () => { playerColor=playerColor==='w'?'b':'w'; document.getElementById('hch-color-lbl').textContent=playerColor==='w'?'White ♔':'Black ♚'; currentFen=''; };
+  document.getElementById('hch-close').onclick = () => { clearHighlights(); panel.remove(); window.__hchLoaded=false; };
+  document.getElementById('hch-toggle').onclick = () => { playerColor=playerColor==='w'?'b':'w'; document.getElementById('hch-color-lbl').textContent=playerColor==='w'?'White ♔':'Black ♚'; currentFen=''; clearHighlights(); };
   document.getElementById('btn-normal').onclick = () => { mode='normal'; document.getElementById('btn-normal').classList.add('active'); document.getElementById('btn-mate').classList.remove('active'); currentFen=''; };
   document.getElementById('btn-mate').onclick = () => { mode='mate'; document.getElementById('btn-mate').classList.add('active'); document.getElementById('btn-normal').classList.remove('active'); currentFen=''; };
 
@@ -101,18 +112,68 @@
     document.getElementById('hch-dot').className='hch-dot'+(state==='on'?' on':state==='thinking'?' thinking':state==='mate'?' mate':'');
   }
 
-  function renderMoves(moves,turn) {
-    document.getElementById('hch-turn').innerHTML=turn===playerColor?`<strong>Your turn!</strong>`:`Opponent's turn...`;
+  // ── Board Highlight ────────────────────────────────────
+  function getSquareEl(sqName) {
+    return document.querySelector(`[data-square="${sqName}"]`);
+  }
+
+  function clearHighlights() {
+    document.querySelectorAll('.hch-sq-highlight, .hch-arrow-svg').forEach(el => el.remove());
+  }
+
+  function highlightMove(uci) {
+    clearHighlights();
+    if (!uci || uci.length < 4) return;
+
+    const from = uci.slice(0, 2);
+    const to   = uci.slice(2, 4);
+
+    const fromEl = getSquareEl(from);
+    const toEl   = getSquareEl(to);
+
+    if (fromEl) {
+      const h = document.createElement('div');
+      h.className = 'hch-sq-highlight hch-sq-from';
+      h.style.cssText = `width:100%;height:100%;top:0;left:0;`;
+      fromEl.style.position = 'relative';
+      fromEl.appendChild(h);
+    }
+
+    if (toEl) {
+      const h = document.createElement('div');
+      h.className = 'hch-sq-highlight hch-sq-to';
+      h.style.cssText = `width:100%;height:100%;top:0;left:0;`;
+      toEl.style.position = 'relative';
+      toEl.appendChild(h);
+    }
+  }
+
+  function renderMoves(moves, turn) {
+    document.getElementById('hch-turn').innerHTML = turn===playerColor ? `<strong>Your turn!</strong>` : `Opponent's turn...`;
     const el=document.getElementById('hch-moves');
-    if(!moves||!moves.length){el.innerHTML='<div class="hch-empty">No moves</div>';return;}
+    if(!moves||!moves.length){el.innerHTML='<div class="hch-empty">No moves</div>';clearHighlights();return;}
+
     el.innerHTML=moves.map((m,i)=>{
       const sc=m.score,isMate=sc.includes('Mate')||sc.includes('mate');
       const scClass=isMate?'mat':parseFloat(sc)>0.3?'win':parseFloat(sc)<-0.3?'los':'eq';
       const rowClass=isMate?'mate-move':i===0?'top':'';
       const rank=isMate?'☠':i===0?'★':i+1;
       const n=m.move.slice(0,2)+' → '+m.move.slice(2,4)+(m.move[4]?'='+m.move[4].toUpperCase():'');
-      return `<div class="hch-row ${rowClass}"><span class="hch-rank">${rank}</span><span class="hch-mv">${n}</span><span class="hch-sc ${scClass}">${sc}</span></div>`;
+      return `<div class="hch-row ${rowClass}" data-uci="${m.move}"><span class="hch-rank">${rank}</span><span class="hch-mv">${n}</span><span class="hch-sc ${scClass}">${sc}</span></div>`;
     }).join('');
+
+    // Highlight best move otomatis
+    bestMoveUci = moves[0].move;
+    highlightMove(bestMoveUci);
+
+    // Klik row untuk highlight move lain
+    document.querySelectorAll('#hch-moves .hch-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const uci = row.getAttribute('data-uci');
+        highlightMove(uci);
+      });
+    });
+
     const hasMate=moves.some(m=>m.score.includes('Mate'));
     setStatus(hasMate?'☠ Mate found!':turn===playerColor?'Your move! ✓':'Waiting...',hasMate?'mate':'on');
   }
@@ -123,28 +184,24 @@
       const histEl = document.querySelector('[class*="history"]');
       if (!histEl) return null;
       let text = histEl.textContent || '';
-      // Fix: "c52." → "c5 2." — tambah spasi sebelum nomor move
-// Fix castling DULU sebelum yang lain
-text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');
-text = text.replace(/([a-zA-Z][1-8])(\d+\.)/g, '$1 $2');
-text = text.replace(/([+#!?])(\d+\.)/g, '$1 $2');
+      // Fix castling DULU
+      text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');
+      text = text.replace(/([a-zA-Z][1-8])(\d+\.)/g, '$1 $2');
+      text = text.replace(/([+#!?])(\d+\.)/g, '$1 $2');
+
       const chess = new Chess();
       const tokens = text.split(/\s+/).filter(t =>
-        t.length >= 2 &&
-        !t.match(/^\d+\.$/) &&
-        !t.match(/^\d+$/) &&
+        t.length >= 2 && !t.match(/^\d+\.?$/) && !t.match(/^\d+$/) &&
         !['Move','History:','No','moves','yet'].includes(t)
       );
 
       let moveCount = 0;
       for (const token of tokens) {
         try {
-          const result = chess.move(token, {sloppy: true});
-          if (result) moveCount++;
-          else break;
+          const r = chess.move(token, {sloppy: true});
+          if (r) moveCount++; else break;
         } catch(e) { break; }
       }
-
       if (moveCount === 0) return null;
       return chess.fen();
     } catch(e) { return null; }
@@ -175,14 +232,16 @@ text = text.replace(/([+#!?])(\d+\.)/g, '$1 $2');
     if (detected !== playerColor) {
       playerColor=detected;
       document.getElementById('hch-color-lbl').textContent=playerColor==='w'?'White ♔':'Black ♚';
-      currentFen='';
+      currentFen=''; clearHighlights();
     }
-
     const fenHist = getFenFromHistory();
     if (fenHist) return { fen: fenHist, turn: fenHist.split(' ')[1] };
 
     const histEl = document.querySelector('[class*="history"]');
-    let text = (histEl?histEl.textContent:'').replace(/([a-zA-Z0-9+#!?])(\d+\.)/g,'$1 $2').replace(/([a-h][1-8])([a-zA-Z])/g,'$1 $2');
+    let text = (histEl?histEl.textContent:'');
+    text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');
+    text = text.replace(/([a-zA-Z][1-8])(\d+\.)/g, '$1 $2');
+    text = text.replace(/([+#!?])(\d+\.)/g, '$1 $2');
     const tokens = text.split(/\s+/).filter(t=>t.length>=2&&!t.match(/^\d+\.?$/)&&!['Move','History:','No','moves','yet'].includes(t));
     const turn = tokens.length%2===0?'w':'b';
     const fen = getFenFromDOM(turn);
@@ -195,24 +254,23 @@ text = text.replace(/([+#!?])(\d+\.)/g, '$1 $2');
     if (!pos) { setStatus('Board not detected','idle'); return; }
     const { fen, turn } = pos;
 
-    // Hanya analisis waktu giliran kamu
     if (turn !== playerColor) {
       setStatus('Opponent thinking...','idle');
       document.getElementById('hch-turn').innerHTML = `Opponent's turn...`;
+      clearHighlights();
       currentFen = '';
       return;
     }
 
     if (fen === currentFen) return;
     currentFen = fen;
-
     isAnalyzing = true;
     setStatus(mode==='mate'?'☠ Hunting...':'Analyzing...','thinking');
 
     try {
       const res = await fetch(`${SERVER}/analyze`, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ fen, movetime: mode==='mate'?150:150, mode })
+        body: JSON.stringify({ fen, movetime: mode==='mate'?600:300, mode })
       });
       const data = await res.json();
       renderMoves(data.moves, turn);
@@ -225,8 +283,8 @@ text = text.replace(/([+#!?])(\d+\.)/g, '$1 $2');
 
   loadChessJs(() => {
     setStatus('Connected ✓','on');
-    setInterval(triggerAnalysis, 150);
-    setTimeout(triggerAnalysis, 150);
+    setInterval(triggerAnalysis, 1000);
+    setTimeout(triggerAnalysis, 500);
   });
 
   console.log('[HCH] Loaded ✓');
