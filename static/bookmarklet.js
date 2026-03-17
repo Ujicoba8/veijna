@@ -6,8 +6,7 @@
   window.__hchLoaded = true;
 
   let currentFen = '';
-  let playerColor = 'w';
-  let analysisTimer = null;
+  let playerColor = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
   let isAnalyzing = false;
 
   // ── CSS ────────────────────────────────────────────────
@@ -31,7 +30,6 @@
       background: linear-gradient(135deg, #1a1400, #2c1f00);
       border-bottom: 1px solid #c9a84c33;
     }
-    .hch-head:active { cursor: grabbing; }
     .hch-title { color: #c9a84c; font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
     .hch-btns { display: flex; gap: 5px; }
     .hch-btn {
@@ -81,7 +79,7 @@
   `;
   document.head.appendChild(style);
 
-  // ── Panel HTML ─────────────────────────────────────────
+  // ── Panel ──────────────────────────────────────────────
   const panel = document.createElement('div');
   panel.id = 'hch-panel';
   panel.innerHTML = `
@@ -98,10 +96,10 @@
         <span id="hch-status-txt">Connecting...</span>
       </div>
       <div class="hch-moves" id="hch-moves">
-        <div class="hch-empty">Waiting for position...</div>
+        <div class="hch-empty">Waiting...</div>
       </div>
       <div class="hch-footer">
-        <div class="hch-color-lbl">Playing as: <strong id="hch-color-lbl">White ♔</strong></div>
+        <div class="hch-color-lbl">Playing as: <strong id="hch-color-lbl">${playerColor === 'w' ? 'White ♔' : 'Black ♚'}</strong></div>
         <button class="hch-toggle" id="hch-toggle">Switch ⇄</button>
       </div>
     </div>
@@ -119,15 +117,15 @@
   document.getElementById('hch-toggle').onclick = () => {
     playerColor = playerColor === 'w' ? 'b' : 'w';
     document.getElementById('hch-color-lbl').textContent = playerColor === 'w' ? 'White ♔' : 'Black ♚';
-    triggerAnalysis(true);
+    currentFen = '';
+    triggerAnalysis();
   };
 
   // ── Drag ───────────────────────────────────────────────
-  const head = document.getElementById('hch-head');
-  head.addEventListener('mousedown', e => {
+  document.getElementById('hch-head').addEventListener('mousedown', e => {
     let ox = e.clientX - panel.getBoundingClientRect().left;
     let oy = e.clientY - panel.getBoundingClientRect().top;
-    const move = e2 => { panel.style.left = (e2.clientX-ox)+'px'; panel.style.top = (e2.clientY-oy)+'px'; panel.style.right='auto'; };
+    const move = e2 => { panel.style.left=(e2.clientX-ox)+'px'; panel.style.top=(e2.clientY-oy)+'px'; panel.style.right='auto'; };
     const up = () => { document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); };
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
@@ -145,9 +143,8 @@
     if (!moves || !moves.length) { el.innerHTML = '<div class="hch-empty">No moves found</div>'; return; }
     el.innerHTML = moves.map((m,i) => {
       const sc = m.score;
-      const scClass = (sc.includes('Mate')||sc.includes('mate')) ? 'mat' : parseFloat(sc)>0.5 ? 'win' : parseFloat(sc)<-0.5 ? 'los' : 'eq';
-      const uci = m.move;
-      const notation = uci.slice(0,2)+' → '+uci.slice(2,4)+(uci[4]?'='+uci[4].toUpperCase():'');
+      const scClass = (sc.includes('Mate')||sc.includes('mate')) ? 'mat' : parseFloat(sc)>0.3 ? 'win' : parseFloat(sc)<-0.3 ? 'los' : 'eq';
+      const notation = m.move.slice(0,2)+' → '+m.move.slice(2,4)+(m.move[4]?'='+m.move[4].toUpperCase():'');
       return `<div class="hch-row ${i===0?'top':''}">
         <span class="hch-rank">${i===0?'★':i+1}</span>
         <span class="hch-mv">${notation}</span>
@@ -157,117 +154,55 @@
     setStatus('Analysis complete ✓', 'on');
   }
 
-  // ── FEN Detection (Hustle Chess specific) ──────────────
+  // ── FEN Detection ──────────────────────────────────────
   function detectFen() {
-    // Hustle Chess pakai chessboard.js dengan data-square + data-piece
-    const squares = document.querySelectorAll('[data-square]');
-    if (squares.length > 0) return fenFromSquares(squares);
-
-    // Fallback chessground
-    const cg = document.querySelector('.cg-wrap');
-    if (cg) return fenFromCg(cg);
-
-    // Fallback: cari FEN string di DOM
-    const m = document.body.innerHTML.match(/[rnbqkpRNBQKP1-8]{2,8}(?:\/[rnbqkpRNBQKP1-8]{1,8}){7}/);
-    if (m) return m[0] + ' ' + playerColor + ' KQkq - 0 1';
-
-    return null;
-  }
-
-  function fenFromSquares(squares) {
-    try {
-      const board = Array(8).fill(null).map(() => Array(8).fill(null));
-      squares.forEach(sq => {
-        const sqn = sq.getAttribute('data-square');
-        if (!sqn || sqn.length < 2) return;
-
-        const fi = sqn.charCodeAt(0) - 97;
-        const ri = 8 - parseInt(sqn[1]);
-        if (fi < 0 || fi > 7 || ri < 0 || ri > 7) return;
-
-        // Hustle Chess: data-piece ada di <img> di dalam square
-        const img = sq.querySelector('img[data-piece]');
-        let pieceVal = img ? img.getAttribute('data-piece') : sq.getAttribute('data-piece');
-
-        if (!pieceVal || pieceVal.length < 2) return;
-
-        const color = pieceVal[0].toLowerCase();
-        const type  = pieceVal[1].toLowerCase();
-        board[ri][fi] = color + type;
-      });
-
-      const hasPieces = board.some(row => row.some(cell => cell !== null));
-      if (!hasPieces) return null;
-
-      return boardToFen(board);
-    } catch(e) {
-      console.error('[HCH] fenFromSquares error:', e);
-      return null;
+    // Auto-detect warna tiap kali
+    const detected = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
+    if (detected !== playerColor) {
+      playerColor = detected;
+      document.getElementById('hch-color-lbl').textContent = playerColor === 'w' ? 'White ♔' : 'Black ♚';
+      currentFen = '';
     }
-  }
 
-  function fenFromCg(wrap) {
-    try {
-      const pieces = wrap.querySelectorAll('piece');
-      if (!pieces.length) return null;
-      const board = Array(8).fill(null).map(() => Array(8).fill(null));
-      pieces.forEach(p => {
-        const cls = p.className;
-        const st = p.getAttribute('style') || '';
-        const t = st.match(/translate\((\d+(?:\.\d+)?)%,\s*(\d+(?:\.\d+)?)%\)/);
-        if (!t) return;
-        const fi = Math.round(parseFloat(t[1]) / 12.5);
-        const ri = Math.round(parseFloat(t[2]) / 12.5);
-        const color = cls.includes('white') ? 'w' : 'b';
-        let type = '';
-        if (cls.includes('king'))        type = 'k';
-        else if (cls.includes('queen'))  type = 'q';
-        else if (cls.includes('rook'))   type = 'r';
-        else if (cls.includes('bishop')) type = 'b';
-        else if (cls.includes('knight')) type = 'n';
-        else if (cls.includes('pawn'))   type = 'p';
-        if (type && fi >= 0 && fi < 8 && ri >= 0 && ri < 8) board[ri][fi] = color + type;
-      });
-      return boardToFen(board);
-    } catch { return null; }
-  }
+    const squares = document.querySelectorAll('[data-square]');
+    if (!squares.length) return null;
 
-  function boardToFen(board) {
+    const b = Array(8).fill(null).map(() => Array(8).fill(null));
+    squares.forEach(sq => {
+      const sqn = sq.getAttribute('data-square');
+      if (!sqn || sqn.length < 2) return;
+      const fi = sqn.charCodeAt(0) - 97;
+      const ri = 8 - parseInt(sqn[1]);
+      if (fi < 0 || fi > 7 || ri < 0 || ri > 7) return;
+      const img = sq.querySelector('img[data-piece]');
+      const pv = img ? img.getAttribute('data-piece') : null;
+      if (!pv || pv.length < 2) return;
+      b[ri][fi] = pv[0].toLowerCase() + pv[1].toLowerCase();
+    });
+
+    const hasPieces = b.some(row => row.some(c => c !== null));
+    if (!hasPieces) return null;
+
     let fen = '';
-    for (let r = 0; r < 8; r++) {
-      let e = 0;
-      for (let f = 0; f < 8; f++) {
-        const p = board[r][f];
+    for (let r=0; r<8; r++) {
+      let e = 0, row = '';
+      for (let f=0; f<8; f++) {
+        const p = b[r][f];
         if (!p) { e++; }
-        else {
-          if (e) { fen += e; e = 0; }
-          fen += p[0]==='w' ? p[1].toUpperCase() : p[1];
-        }
+        else { if(e){row+=e;e=0;} row += p[0]==='w' ? p[1].toUpperCase() : p[1]; }
       }
-      if (e) fen += e;
-      if (r < 7) fen += '/';
+      if (e) row += e;
+      fen += row + (r < 7 ? '/' : '');
     }
     return fen + ' ' + playerColor + ' KQkq - 0 1';
   }
 
-  // ── Auto-detect player color ──────────────────────
-  function detectPlayerColor() {
-    // Hustle chess: "You (White)" or "You (Black)" text
-    const els = document.querySelectorAll("*");
-    for (const el of els) {
-      const txt = el.textContent || "";
-      if (txt.includes("You (White)") && el.children.length === 0) return "w";
-      if (txt.includes("You (Black)") && el.children.length === 0) return "b";
-    }
-    return null;
-  }
-
   // ── Analysis ───────────────────────────────────────────
-  async function triggerAnalysis(force=false) {
-    if (isAnalyzing && !force) return;
+  async function triggerAnalysis() {
+    if (isAnalyzing) return;
     const fen = detectFen();
     if (!fen) { setStatus('Board not detected', 'idle'); return; }
-    if (fen === currentFen && !force) return;
+    if (fen === currentFen) return;
     currentFen = fen;
 
     isAnalyzing = true;
@@ -283,26 +218,16 @@
       renderMoves(data.moves);
     } catch(err) {
       setStatus('Server error ✗', 'idle');
-      console.error('[HCH]', err);
     } finally {
       isAnalyzing = false;
     }
   }
 
-  // ── Observer ───────────────────────────────────────────
-  const target = document.querySelector('[class*="board"], [id*="board"]') || document.body;
-  const obs = new MutationObserver(() => {
-    clearTimeout(analysisTimer);
-    analysisTimer = setTimeout(() => triggerAnalysis(), 400);
-  });
-  obs.observe(target, { childList: true, subtree: true, attributes: true, attributeFilter: ['class','style','data-piece','data-square'] });
+  // ── Polling setiap 1 detik ─────────────────────────────
+  setInterval(triggerAnalysis, 200);
 
-  // ── Init ───────────────────────────────────────────────
-  fetch(`${SERVER}/health`)
-    .then(r => r.json())
-    .then(() => { setStatus('Connected ✓', 'on'); triggerAnalysis(); })
-    .catch(() => setStatus('Cannot reach server ✗', 'idle'));
+  setStatus('Connected ✓', 'on');
+  setTimeout(triggerAnalysis, 200);
 
-  setTimeout(() => triggerAnalysis(true), 2000);
   console.log('[HCH] Loaded ✓');
 })();
