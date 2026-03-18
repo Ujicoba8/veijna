@@ -5,11 +5,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Download Stockfish 18 binary
-RUN wget -q https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-ubuntu-x86-64-avx2.tar && \
-    tar xf stockfish-ubuntu-x86-64-avx2.tar && \
-    mv stockfish/stockfish-ubuntu-x86-64-avx2 /usr/local/bin/stockfish && \
+RUN wget -q "https://github.com/official-stockfish/Stockfish/releases/download/sf_18/stockfish-ubuntu-x86-64-avx2.tar.gz" -O sf.tar.gz && \
+    tar xzf sf.tar.gz && \
+    find . -name "stockfish*" -type f -executable | head -1 | xargs -I{} mv {} /usr/local/bin/stockfish && \
     chmod +x /usr/local/bin/stockfish && \
-    rm -rf stockfish stockfish-ubuntu-x86-64-avx2.tar
+    rm -rf sf.tar.gz stockfish*
 
 WORKDIR /app
 COPY package*.json ./
