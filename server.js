@@ -86,6 +86,7 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
     proc.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
     proc.stdin.write('setoption name Threads value 2\n');
     proc.stdin.write('setoption name Hash value 128\n');
+    proc.stdin.write('setoption name Contempt value 50\n');
     proc.stdin.write('isready\n');
     proc.stdin.write(`position fen ${fen}\n`);
     if (mateSearch) {
