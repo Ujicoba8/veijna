@@ -35,7 +35,6 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
     catch(e) { return reject(e); }
 
     const proc = spawn(sfCmd.bin, sfCmd.args, { stdio: ['pipe', 'pipe', 'pipe'] });
-
     const moves = [];
     let bestMove = null;
     let resolved = false;
@@ -49,17 +48,15 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
       }
     };
 
-    const timeout = setTimeout(done, moveTime + 800);
+    const timeout = setTimeout(done, moveTime + 400);
 
     proc.stdout.on('data', (data) => {
       buffer += data.toString();
       const lines = buffer.split('\n');
       buffer = lines.pop();
-
       lines.forEach(line => {
         line = line.trim();
         if (!line) return;
-
         if (line.startsWith('info') && line.includes('multipv') && line.includes('score')) {
           const m = line.match(/multipv (\d+).*?score (cp|mate) (-?\d+).*? pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
           if (m) {
@@ -68,11 +65,9 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
             const score = m[2] === 'mate'
               ? (val > 0 ? `Mate in ${val}` : `Mated in ${Math.abs(val)}`)
               : (val > 0 ? '+' : '') + (val / 100).toFixed(2);
-
             moves[idx] = { move: m[4], score };
           }
         }
-
         if (line.startsWith('bestmove')) {
           const bm = line.split(' ')[1];
           bestMove = bm && bm !== '(none)' ? bm : null;
@@ -83,36 +78,20 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
     });
 
     proc.stderr.on('data', () => {});
-
     proc.on('error', (err) => {
-      if (!resolved) {
-        resolved = true;
-        clearTimeout(timeout);
-        reject(err);
-      }
+      if (!resolved) { resolved = true; clearTimeout(timeout); reject(err); }
     });
 
-    // INIT ENGINE
     proc.stdin.write('uci\n');
-
-    // 🔥 MAX POWER SETTINGS
-    proc.stdin.write('setoption name Threads value 4\n');      // sesuaikan CPU
-    proc.stdin.write('setoption name Hash value 1024\n');      // sesuaikan RAM
-    proc.stdin.write('setoption name Skill Level value 20\n');
-    proc.stdin.write('setoption name UCI_LimitStrength value false\n');
-    proc.stdin.write('setoption name Use NNUE value true\n');
-    proc.stdin.write('setoption name Ponder value false\n');
-
     proc.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
-
+    proc.stdin.write('setoption name Threads value 2\n');
+    proc.stdin.write('setoption name Hash value 128\n');
     proc.stdin.write('isready\n');
     proc.stdin.write(`position fen ${fen}\n`);
-
-    // 🔥 SEARCH (NO DEPTH LIMIT)
     if (mateSearch) {
-      proc.stdin.write(`go movetime ${moveTime} mate 10\n`);
+      proc.stdin.write(`go movetime ${moveTime} depth 30 mate 10\n`);
     } else {
-      proc.stdin.write(`go movetime ${moveTime}\n`);
+      proc.stdin.write(`go movetime ${moveTime} depth 25\n`);
     }
   });
 }
@@ -123,37 +102,23 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', engine });
 });
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'static', 'index.html'));
-});
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
-  const { fen, movetime = 1000, mode = 'normal' } = req.body;
-
+  const { fen, movetime = 300, mode = 'normal' } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
-
   try {
-    // 🔥 NAHKIN LIMIT
-    const mt = Math.min(parseInt(movetime) || 1000, 5000);
-
+    const mt = Math.min(parseInt(movetime) || 150, 150);
     const isMate = mode === 'mate';
+    const result = await runStockfish(fen, isMate ? 1 : 3, mt, isMate);
 
-    const result = await runStockfish(
-      fen,
-      isMate ? 1 : 1,   // focus best move
-      mt,
-      isMate
-    );
-
-    // fallback kalau mate gak ketemu
     if (isMate && !result.moves.some(m => m.score.includes('Mate'))) {
-      const fallback = await runStockfish(fen, 1, mt, false);
+      const fallback = await runStockfish(fen, 3, mt, false);
       return res.json(fallback);
     }
 
     console.log(`[${mode}] best: ${result.bestMove}`);
     res.json(result);
-
   } catch (err) {
     console.error('[analyze]', err.message);
     res.status(500).json({ error: err.message });
@@ -162,19 +127,11 @@ app.post('/analyze', async (req, res) => {
 
 app.get('/inject.js', (req, res) => {
   const serverUrl = 'https://' + req.get('host');
-
   res.setHeader('Content-Type', 'application/javascript');
   res.setHeader('Cache-Control', 'no-cache');
-
-  let script = fs.readFileSync(
-    path.join(__dirname, 'static', 'bookmarklet.js'),
-    'utf8'
-  );
-
+  let script = fs.readFileSync(path.join(__dirname, 'static', 'bookmarklet.js'), 'utf8');
   script = script.replace('https://YOUR-APP.railway.app', serverUrl);
   res.send(script);
 });
 
-app.listen(PORT, () => {
-  console.log(`🔥 Super Stockfish running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`✓ Hustle Chess Helper running on port ${PORT}`));
