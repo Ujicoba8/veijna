@@ -128,7 +128,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/analyze', async (req, res) => {
-  const { fen, movetime = 100000, mode = 'normal' } = req.body;
+  const { fen, movetime = 1000, mode = 'normal' } = req.body;
 
   if (!fen) return res.status(400).json({ error: 'FEN required' });
 
