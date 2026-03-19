@@ -105,7 +105,7 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
-  const { fen, movetime = 3000, mode = 'normal' } = req.body;
+  const { fen, movetime = 6000, mode = 'normal' } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
     const mt = Math.min(parseInt(movetime) || 1000, 2000);
