@@ -48,7 +48,7 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
       }
     };
 
-    const timeout = setTimeout(done, moveTime + 2000);
+    const timeout = setTimeout(done, moveTime + 400);
 
     proc.stdout.on('data', (data) => {
       buffer += data.toString();
@@ -84,14 +84,14 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
 
     proc.stdin.write('uci\n');
     proc.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
-    proc.stdin.write('setoption name Threads value 2\n');
-    proc.stdin.write('setoption name Hash value 128\n');
+    proc.stdin.write('setoption name Threads value 4\n');
+    proc.stdin.write('setoption name Hash value 512\n');
     proc.stdin.write('isready\n');
     proc.stdin.write(`position fen ${fen}\n`);
     if (mateSearch) {
       proc.stdin.write(`go movetime ${moveTime} depth 30 mate 10\n`);
     } else {
-      proc.stdin.write(`go movetime ${moveTime} depth 25\n`);
+      proc.stdin.write(`go movetime ${moveTime}\n`);
     }
   });
 }
@@ -105,12 +105,12 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
-  const { fen, movetime = 3000, mode = 'normal' } = req.body;
+  const { fen, movetime = 300, mode = 'normal' } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
-    const mt = Math.min(parseInt(movetime) || 2000, 2000);
+    const mt = Math.min(parseInt(movetime) || 1000, 2000);
     const isMate = mode === 'mate';
-    const result = await runStockfish(fen, isMate ? 1 : 3, mt, isMate);
+    const result = await runStockfish(fen, 1, mt, isMate);
 
     if (isMate && !result.moves.some(m => m.score.includes('Mate'))) {
       const fallback = await runStockfish(fen, 3, mt, false);
