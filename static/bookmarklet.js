@@ -14,16 +14,30 @@
     s.onload = cb; document.head.appendChild(s);
   }
 
-  // UI Panel
+  // UI Setup
   const style = document.createElement('style');
-  style.textContent = `#hch-panel{position:fixed;top:10px;right:10px;width:240px;z-index:99999;background:#111;border:1px solid #c9a84c;color:#fff;padding:10px;font-family:sans-serif;border-radius:8px;} .hch-mv{color:gold;font-weight:bold} .hch-row{display:flex;justify-content:space-between;padding:4px;border-bottom:1px solid #333}`;
+  style.textContent = `
+    #hch-panel { position:fixed; top:20px; right:20px; width:250px; z-index:99999; background:#111; border:1px solid #c9a84c; border-radius:8px; color:#eee; font-family:sans-serif; padding:10px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+    .hch-row { display:flex; justify-content:space-between; padding:6px; margin:3px 0; background:#222; border-radius:4px; cursor:pointer; }
+    .hch-best { border: 1px solid #c9a84c; background: #1a1400; }
+    .hch-sq-highlight { position:absolute; pointer-events:none; z-index:9999; border-radius:3px; width:100%; height:100%; top:0; left:0; }
+  `;
   document.head.appendChild(style);
+
   const panel = document.createElement('div');
   panel.id = 'hch-panel';
-  panel.innerHTML = `<div style="font-size:12px;font-weight:bold;color:gold">♟ CHESS HELPER</div><div id="hch-status" style="font-size:10px;margin:5px 0">Ready</div><div id="hch-turn" style="font-size:14px;text-align:center;margin:10px 0;font-weight:bold">...</div><div id="hch-moves"></div>`;
+  panel.innerHTML = `
+    <div style="font-weight:bold; color:#c9a84c; margin-bottom:8px;">♟ CHESS HELPER</div>
+    <div id="hch-status" style="font-size:10px; color:#777; margin-bottom:10px;">Ready</div>
+    <div id="hch-turn" style="text-align:center; font-weight:bold; margin-bottom:10px; font-size:14px;">...</div>
+    <div id="hch-moves"></div>
+    <div style="margin-top:10px; font-size:10px; color:#444; border-top:1px solid #333; pt:5px">
+      Playing as: <span id="hch-color">Detecting...</span>
+    </div>
+  `;
   document.body.appendChild(panel);
 
-  function highlightMove(uci) {
+  function drawHighlight(uci) {
     document.querySelectorAll('.hch-sq-highlight').forEach(el => el.remove());
     const from = uci.slice(0, 2), to = uci.slice(2, 4);
     [from, to].forEach((sq, i) => {
@@ -31,30 +45,36 @@
       if (el) {
         const h = document.createElement('div');
         h.className = 'hch-sq-highlight';
-        h.style.cssText = `position:absolute;inset:0;background:${i==0?'rgba(255,215,0,0.4)':'rgba(50,205,50,0.4)'};border:2px solid ${i==0?'gold':'lime'}`;
-        el.style.position = 'relative'; el.appendChild(h);
+        h.style.cssText = `background:${i==0?'rgba(255,215,0,0.4)':'rgba(50,205,50,0.4)'}; border:2px solid ${i==0?'gold':'lime'}`;
+        el.style.position = 'relative';
+        el.appendChild(h);
       }
     });
   }
 
   function detectPosition() {
+    const isBlack = document.body.innerText.includes('You (Black)');
+    playerColor = isBlack ? 'b' : 'w';
+    document.getElementById('hch-color').textContent = playerColor === 'w' ? 'White' : 'Black';
+
     const histEl = document.querySelector('[class*="history"]');
     if (!histEl || !window.Chess) return null;
 
-    playerColor = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
     let text = histEl.textContent || '';
     
-    // FIX: Memecah teks rapat e4e6 dan menghapus angka langkah
+    // --- FIX LOGIKA PEMISAHAN (e4e6 -> e4 e6) ---
     let cleanText = text.replace(/Move History:/gi, '')
-                        .replace(/([a-zKQRBN][a-h1-8x+#=]*[1-8])([a-zKQRBN])/g, '$1 $2') // e4e6 -> e4 e6
-                        .replace(/(\d+\.)([a-zKQRBN])/gi, '$1 $2') // 1.e4 -> 1. e4
-                        .replace(/\d+\./g, ' ') 
+                        .replace(/([a-zKQRBN][a-h1-8x+#=]*[1-8])([a-zKQRBN])/g, '$1 $2') // Pisah e4e6
+                        .replace(/(\d+\.)([a-zKQRBN])/gi, '$1 $2') // Pisah 1.e4
+                        .replace(/\d+\./g, ' ') // Hapus angka langkah
                         .replace(/\s+/g, ' ').trim();
 
     const tokens = cleanText.split(' ').filter(t => t.length >= 2);
     const chess = new Chess();
-    for (const m of tokens) { if (!chess.move(m, { sloppy: true })) break; }
-    
+    for (const move of tokens) {
+      if (!chess.move(move, { sloppy: true })) break;
+    }
+
     return { fen: chess.fen(), turn: chess.turn() };
   }
 
@@ -63,31 +83,44 @@
     const pos = detectPosition();
     if (!pos) return;
 
-    if (pos.turn !== playerColor) {
-      document.getElementById('hch-turn').innerText = "Opponent's Turn";
-      document.getElementById('hch-status').innerText = "Waiting...";
-      if(pos.fen !== currentFen) { document.getElementById('hch-moves').innerHTML = ''; currentFen = pos.fen; }
+    const { fen, turn } = pos;
+    const turnEl = document.getElementById('hch-turn');
+
+    if (turn !== playerColor) {
+      turnEl.innerHTML = `<span style="color:#555">Opponent's turn...</span>`;
+      if (fen !== currentFen) { document.getElementById('hch-moves').innerHTML = ''; }
+      currentFen = fen;
       return;
     }
 
-    if (pos.fen === currentFen) return;
-    currentFen = pos.fen;
+    if (fen === currentFen) return;
+    currentFen = fen;
     isAnalyzing = true;
-    document.getElementById('hch-turn').innerText = "YOUR TURN!";
-    document.getElementById('hch-status').innerText = "Analyzing...";
+    turnEl.innerHTML = `<span style="color:#4caf50">YOUR TURN!</span>`;
 
     try {
       const res = await fetch(`${SERVER}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fen: pos.fen, movetime: 400 })
+        body: JSON.stringify({ fen, movetime: 300 })
       });
       const data = await res.json();
+      
       const el = document.getElementById('hch-moves');
-      el.innerHTML = data.moves.map(m => `<div class="hch-row"><span class="hch-mv">${m.move}</span><span>${m.score}</span></div>`).join('');
-      if (data.moves[0]) highlightMove(data.moves[0].move);
-      document.getElementById('hch-status').innerText = "Analyzed ✓";
-    } catch (e) { console.error(e); } finally { isAnalyzing = false; }
+      el.innerHTML = data.moves.map((m, i) => `
+        <div class="hch-row ${i===0?'hch-best':''}" onclick="drawHighlight('${m.move}')">
+          <span style="color:gold; font-weight:bold">${m.move}</span>
+          <span style="color:#4caf50">${m.score}</span>
+        </div>
+      `).join('');
+
+      if (data.moves[0]) drawHighlight(data.moves[0].move);
+      document.getElementById('hch-status').textContent = 'Analysis complete ✓';
+    } catch (e) {
+      document.getElementById('hch-status').textContent = 'Server Error';
+    } finally {
+      isAnalyzing = false;
+    }
   }
 
   loadChessJs(() => setInterval(triggerAnalysis, 1000));
