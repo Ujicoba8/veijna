@@ -148,21 +148,30 @@
       if (!histEl) return null;
       let text = histEl.textContent || '';
 
-      // Step 1: Hapus nomor move (1. 2. 10. dst)
-      text = text.replace(/\d+\./g, ' ');
+      // Step 1: Hapus nomor move yang nyambung ke move sebelumnya (e.g. Nf62. d4exd43.)
+      text = text.replace(/([a-zA-Z][1-8])\d+\./g, '$1 ');
+      text = text.replace(/([+#!?])\d+\./g, '$1 ');
+      text = text.replace(/(O-O-O)\d+\./g, '$1 ');
+      text = text.replace(/(O-O)\d+\./g, '$1 ');
+      // Hapus nomor move di awal atau setelah spasi
+      text = text.replace(/^\s*\d+\./g, ' ');
+      text = text.replace(/\s+\d+\./g, ' ');
 
-      // Step 2: Split move yang nyambung (format 1.e4e5)
-      text = text.replace(/([a-h][1-8])([a-h][1-8])/g, '$1 $2');       // e4e5 → e4 e5
-      text = text.replace(/([a-h][1-8])([NBRQK])/g, '$1 $2');           // e5Nf3 → e5 Nf3
-      text = text.replace(/([NBRQK][a-h]?[1-8]?)([a-h][1-8])/g, '$1 $2'); // Nf3e5 → Nf3 e5
-      text = text.replace(/([NBRQK][a-h][1-8])([NBRQK])/g, '$1 $2');   // Nf3Nc6 → Nf3 Nc6
-      text = text.replace(/(O-O-O|O-O)([a-hNBRQK])/g, '$1 $2');        // O-ONxe4 → O-O Nxe4
-      text = text.replace(/([+#!?])([a-hNBRQK])/g, '$1 $2');            // e4+e5 → e4+ e5
+      // Step 2: Split double castling (O-OO-O → O-O O-O)
+      text = text.replace(/O-O-OO-O-O/g, 'O-O-O O-O-O');
+      text = text.replace(/O-O-OO-O/g, 'O-O-O O-O');
+      text = text.replace(/O-OO-O/g, 'O-O O-O');
 
-      // Step 3: Fix kalau masih ada nomor nyambung (e62. → e6 2.)
-      text = text.replace(/(O-O-O|O-O)(\d+)/g, '$1 ');
-      text = text.replace(/([a-zA-Z][1-8])(\d+)/g, '$1 ');
-      text = text.replace(/([+#!?])(\d+)/g, '$1 ');
+      // Step 3: Split move nyambung — urutan penting!
+      text = text.replace(/([a-h][1-8])([a-h]x)/g, '$1 $2');            // d4exd4 → d4 exd4
+      text = text.replace(/([a-h][1-8])([a-h][1-8])/g, '$1 $2');        // e4c5 → e4 c5
+      text = text.replace(/([a-h][1-8])([NBRQK])/g, '$1 $2');            // e5Nf3 → e5 Nf3
+      text = text.replace(/([NBRQK][a-h][1-8])([a-h][1-8])/g, '$1 $2'); // Nf3e5 → Nf3 e5
+      text = text.replace(/([NBRQK][a-h][1-8])([a-h]x)/g, '$1 $2');     // Nf3exd4 → Nf3 exd4
+      text = text.replace(/([NBRQK][a-h][1-8])([NBRQK])/g, '$1 $2');    // Nf3Nc6 → Nf3 Nc6
+      text = text.replace(/(O-O-O)([a-hNBRQKx])/g, '$1 $2');
+      text = text.replace(/(O-O)([a-hNBRQKx])/g, '$1 $2');
+      text = text.replace(/([+#!?])([a-hNBRQKO])/g, '$1 $2');
 
       const tokens = text.split(/\s+/).filter(t =>
         t.length >= 2 &&
