@@ -11,7 +11,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'static')));
 
-// Detect stockfish binary atau npm
 function getStockfishCmd() {
   try {
     execSync('which stockfish', { stdio: 'ignore' });
@@ -21,20 +20,15 @@ function getStockfishCmd() {
     const sfPath = require.resolve('stockfish/src/stockfish.js');
     return { bin: process.execPath, args: [sfPath] };
   } catch {}
-  try {
-    const sfPath = require.resolve('stockfish');
-    return { bin: process.execPath, args: [sfPath] };
-  } catch {}
   throw new Error('Stockfish not found');
 }
 
 function runStockfish(fen, multiPV, moveTime, mateSearch) {
   return new Promise((resolve, reject) => {
     let sfCmd;
-    try { sfCmd = getStockfishCmd(); }
-    catch(e) { return reject(e); }
+    try { sfCmd = getStockfishCmd(); } catch(e) { return reject(e); }
 
-    const proc = spawn(sfCmd.bin, sfCmd.args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn(sfCmd.bin, sfCmd.args);
     const moves = [];
     let bestMove = null;
     let resolved = false;
@@ -48,7 +42,8 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
       }
     };
 
-    const timeout = setTimeout(done, moveTime + 400);
+    // Tambahkan buffer waktu agar engine tidak mati sebelum mengirim bestmove
+    const timeout = setTimeout(done, moveTime + 1000); 
 
     proc.stdout.on('data', (data) => {
       buffer += data.toString();
@@ -56,7 +51,6 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
       buffer = lines.pop();
       lines.forEach(line => {
         line = line.trim();
-        if (!line) return;
         if (line.startsWith('info') && line.includes('multipv') && line.includes('score')) {
           const m = line.match(/multipv (\d+).*?score (cp|mate) (-?\d+).*? pv ([a-h][1-8][a-h][1-8][qrbn]?)/);
           if (m) {
@@ -77,50 +71,25 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
       });
     });
 
-    proc.stderr.on('data', () => {});
-    proc.on('error', (err) => {
-      if (!resolved) { resolved = true; clearTimeout(timeout); reject(err); }
-    });
-
-    proc.stdin.write('uci\n');
-    proc.stdin.write(`setoption name MultiPV value ${multiPV}\n`);
-    proc.stdin.write('setoption name Threads value 2\n');
-    proc.stdin.write('setoption name Hash value 128\n');
-    proc.stdin.write('isready\n');
-    proc.stdin.write(`position fen ${fen}\n`);
-    if (mateSearch) {
-      proc.stdin.write(`go movetime ${moveTime} depth 30 mate 10\n`);
-    } else {
-      proc.stdin.write(`go movetime ${moveTime} depth 25\n`);
-    }
+    proc.stdin.write(`uci\nsetoption name MultiPV value ${multiPV}\nisready\nposition fen ${fen}\n`);
+    proc.stdin.write(`go movetime ${moveTime}\n`);
   });
 }
-
-app.get('/health', (req, res) => {
-  let engine = 'stockfish-npm';
-  try { execSync('which stockfish', { stdio: 'ignore' }); engine = 'stockfish-binary'; } catch {}
-  res.json({ status: 'ok', engine });
-});
-
-app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
   const { fen, movetime = 300, mode = 'normal' } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
+  
   try {
-    const mt = Math.min(parseInt(movetime) || 250, 250);
+    // Perbaikan: Izinkan movetime hingga 1000ms agar engine punya waktu berpikir
+    const mt = Math.min(parseInt(movetime), 1000); 
     const isMate = mode === 'mate';
     const result = await runStockfish(fen, isMate ? 1 : 3, mt, isMate);
 
-    if (isMate && !result.moves.some(m => m.score.includes('Mate'))) {
-      const fallback = await runStockfish(fen, 3, mt, false);
-      return res.json(fallback);
-    }
-
-    console.log(`[${mode}] best: ${result.bestMove}`);
+    console.log(`[${mode}] Analisa selesai untuk: ${result.bestMove}`);
     res.json(result);
   } catch (err) {
-    console.error('[analyze]', err.message);
+    console.error('[Error]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -128,10 +97,9 @@ app.post('/analyze', async (req, res) => {
 app.get('/inject.js', (req, res) => {
   const serverUrl = 'https://' + req.get('host');
   res.setHeader('Content-Type', 'application/javascript');
-  res.setHeader('Cache-Control', 'no-cache');
   let script = fs.readFileSync(path.join(__dirname, 'static', 'bookmarklet.js'), 'utf8');
-  script = script.replace('https://YOUR-APP.railway.app', serverUrl);
+  script = script.replace('https://hustle-chess-helper-production.up.railway.app', serverUrl);
   res.send(script);
 });
 
-app.listen(PORT, () => console.log(`✓ Hustle Chess Helper running on port ${PORT}`));
+app.listen(PORT, () => console.log(`✓ Server Aktif di Port ${PORT}`));
