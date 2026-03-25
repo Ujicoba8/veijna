@@ -148,11 +148,21 @@
       if (!histEl) return null;
       let text = histEl.textContent || '';
 
-      // Fix semua pola nyambung
-      text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');      // castling
-      text = text.replace(/([a-zA-Z][1-8])(\d+\.)/g, '$1 $2');   // e62. → e6 2.
-      text = text.replace(/([+#!?])(\d+\.)/g, '$1 $2');           // Qxf4+16. → Qxf4+ 16.
-      text = text.replace(/([a-h][1-8])([NBRQK])/g, '$1 $2');    // e5Nf6 → e5 Nf6
+      // Step 1: Hapus nomor move (1. 2. 10. dst)
+      text = text.replace(/\d+\./g, ' ');
+
+      // Step 2: Split move yang nyambung (format 1.e4e5)
+      text = text.replace(/([a-h][1-8])([a-h][1-8])/g, '$1 $2');       // e4e5 → e4 e5
+      text = text.replace(/([a-h][1-8])([NBRQK])/g, '$1 $2');           // e5Nf3 → e5 Nf3
+      text = text.replace(/([NBRQK][a-h]?[1-8]?)([a-h][1-8])/g, '$1 $2'); // Nf3e5 → Nf3 e5
+      text = text.replace(/([NBRQK][a-h][1-8])([NBRQK])/g, '$1 $2');   // Nf3Nc6 → Nf3 Nc6
+      text = text.replace(/(O-O-O|O-O)([a-hNBRQK])/g, '$1 $2');        // O-ONxe4 → O-O Nxe4
+      text = text.replace(/([+#!?])([a-hNBRQK])/g, '$1 $2');            // e4+e5 → e4+ e5
+
+      // Step 3: Fix kalau masih ada nomor nyambung (e62. → e6 2.)
+      text = text.replace(/(O-O-O|O-O)(\d+)/g, '$1 ');
+      text = text.replace(/([a-zA-Z][1-8])(\d+)/g, '$1 ');
+      text = text.replace(/([+#!?])(\d+)/g, '$1 ');
 
       const tokens = text.split(/\s+/).filter(t =>
         t.length >= 2 &&
