@@ -27,6 +27,7 @@ function runStockfish(fen, multiPV, moveTime) {
   return new Promise((resolve, reject) => {
     let sfCmd;
     try { sfCmd = getStockfishCmd(); } catch(e) { return reject(e); }
+
     const proc = spawn(sfCmd.bin, sfCmd.args);
     const moves = [];
     let bestMove = null;
@@ -54,7 +55,7 @@ function runStockfish(fen, multiPV, moveTime) {
           if (m) {
             const idx = parseInt(m[1]) - 1;
             const val = parseInt(m[3]);
-            const score = m[2] === 'mate' ? `M${val}` : (val/100).toFixed(2);
+            const score = m[2] === 'mate' ? `M${val}` : (val / 100).toFixed(2);
             moves[idx] = { move: m[4], score };
           }
         }
@@ -73,14 +74,21 @@ function runStockfish(fen, multiPV, moveTime) {
 app.post('/analyze', async (req, res) => {
   const { fen, movetime = 300 } = req.body;
   try {
-    // FIX: Menaikkan limit waktu agar engine tidak prematur
+    // FIX: Limit ditingkatkan ke 1000ms agar lebih stabil
     const mt = Math.min(parseInt(movetime) || 300, 1000); 
     const result = await runStockfish(fen, 3, mt);
-    console.log(`[Analyzed] Best: ${result.bestMove}`);
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+app.get('/inject.js', (req, res) => {
+  const serverUrl = 'https://' + req.get('host');
+  res.setHeader('Content-Type', 'application/javascript');
+  let script = fs.readFileSync(path.join(__dirname, 'static', 'bookmarklet.js'), 'utf8');
+  script = script.replace('https://hustle-chess-helper-production.up.railway.app', serverUrl);
+  res.send(script);
 });
 
 app.listen(PORT, () => console.log(`✓ Server Aktif di Port ${PORT}`));
