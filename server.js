@@ -20,10 +20,10 @@ function getStockfishCmd() {
     const sfPath = require.resolve('stockfish/src/stockfish.js');
     return { bin: process.execPath, args: [sfPath] };
   } catch {}
-  throw new Error('Stockfish not found');
+  throw new Error('Stockfish tidak ditemukan di sistem atau npm');
 }
 
-function runStockfish(fen, multiPV, moveTime, mateSearch) {
+function runStockfish(fen, multiPV, moveTime) {
   return new Promise((resolve, reject) => {
     let sfCmd;
     try { sfCmd = getStockfishCmd(); } catch(e) { return reject(e); }
@@ -42,7 +42,6 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
       }
     };
 
-    // Tambahkan buffer waktu agar engine tidak mati sebelum mengirim bestmove
     const timeout = setTimeout(done, moveTime + 1000); 
 
     proc.stdout.on('data', (data) => {
@@ -71,22 +70,21 @@ function runStockfish(fen, multiPV, moveTime, mateSearch) {
       });
     });
 
-    proc.stdin.write(`uci\nsetoption name MultiPV value ${multiPV}\nisready\nposition fen ${fen}\n`);
-    proc.stdin.write(`go movetime ${moveTime}\n`);
+    proc.stdin.write(`uci\nsetoption name MultiPV value ${multiPV}\nsetoption name Threads value 2\nisready\nposition fen ${fen}\ngo movetime ${moveTime}\n`);
   });
 }
 
 app.post('/analyze', async (req, res) => {
   const { fen, movetime = 300, mode = 'normal' } = req.body;
-  if (!fen) return res.status(400).json({ error: 'FEN required' });
+  if (!fen) return res.status(400).json({ error: 'FEN diperlukan' });
   
   try {
-    // Perbaikan: Izinkan movetime hingga 1000ms agar engine punya waktu berpikir
-    const mt = Math.min(parseInt(movetime), 1000); 
+    // Menaikkan batas movetime agar analisa lebih dalam (max 1 detik)
+    const mt = Math.min(parseInt(movetime) || 300, 1000); 
     const isMate = mode === 'mate';
-    const result = await runStockfish(fen, isMate ? 1 : 3, mt, isMate);
+    const result = await runStockfish(fen, isMate ? 1 : 3, mt);
 
-    console.log(`[${mode}] Analisa selesai untuk: ${result.bestMove}`);
+    console.log(`[${mode}] Berhasil: ${result.bestMove} | FEN: ${fen.slice(0, 20)}...`);
     res.json(result);
   } catch (err) {
     console.error('[Error]', err.message);
