@@ -116,10 +116,10 @@ app.get('/health', (req, res) => {
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'static', 'index.html')));
 
 app.post('/analyze', async (req, res) => {
-  const { fen, movetime = 300, mode = 'normal' } = req.body;
+  const { fen, movetime = 600, mode = 'normal' } = req.body;
   if (!fen) return res.status(400).json({ error: 'FEN required' });
   try {
-    const mt = Math.min(parseInt(movetime) || 300, 3000);
+    const mt = Math.min(parseInt(movetime) || 300, 300);
     const isMate = mode === 'mate';
     const result = await runStockfish(fen, isMate ? 1 : 3, mt, isMate);
 
