@@ -1,6 +1,6 @@
 // Hustle Chess Helper - Bookmarklet Inject Script
 (function () {
-  const SERVER = 'https://YOUR-APP.railway.app';
+  const SERVER = 'https://hustle-chess-helper-production.up.railway.app';
 
   if (window.__hchLoaded) { console.log('[HCH] Already loaded'); return; }
   window.__hchLoaded = true;
@@ -59,15 +59,9 @@
     .hch-color-lbl { font-family:'Space Mono',monospace;font-size:10px;color:#555; }
     .hch-color-lbl strong { color:#c9a84c; }
     .hch-toggle { background:#c9a84c22;border:1px solid #c9a84c55;color:#c9a84c;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;font-family:'Rajdhani',sans-serif;font-weight:700; }
-
-    /* Board highlight overlays */
-    .hch-sq-highlight {
-      position:absolute; pointer-events:none; z-index:9999;
-      border-radius:3px; transition:all 0.2s;
-    }
+    .hch-sq-highlight { position:absolute; pointer-events:none; z-index:9999; border-radius:3px; transition:all 0.2s; }
     .hch-sq-from { background:rgba(255,215,0,0.5); border:3px solid rgba(255,215,0,0.9); }
     .hch-sq-to   { background:rgba(50,205,50,0.5); border:3px solid rgba(50,205,50,0.9); }
-    .hch-arrow-svg { position:absolute; pointer-events:none; z-index:9998; }
   `;
   document.head.appendChild(style);
 
@@ -112,47 +106,23 @@
     document.getElementById('hch-dot').className='hch-dot'+(state==='on'?' on':state==='thinking'?' thinking':state==='mate'?' mate':'');
   }
 
-  // ── Board Highlight ────────────────────────────────────
-  function getSquareEl(sqName) {
-    return document.querySelector(`[data-square="${sqName}"]`);
-  }
+  function getSquareEl(sqName) { return document.querySelector(`[data-square="${sqName}"]`); }
 
-  function clearHighlights() {
-    document.querySelectorAll('.hch-sq-highlight, .hch-arrow-svg').forEach(el => el.remove());
-  }
+  function clearHighlights() { document.querySelectorAll('.hch-sq-highlight').forEach(el => el.remove()); }
 
   function highlightMove(uci) {
     clearHighlights();
     if (!uci || uci.length < 4) return;
-
-    const from = uci.slice(0, 2);
-    const to   = uci.slice(2, 4);
-
-    const fromEl = getSquareEl(from);
-    const toEl   = getSquareEl(to);
-
-    if (fromEl) {
-      const h = document.createElement('div');
-      h.className = 'hch-sq-highlight hch-sq-from';
-      h.style.cssText = `width:100%;height:100%;top:0;left:0;`;
-      fromEl.style.position = 'relative';
-      fromEl.appendChild(h);
-    }
-
-    if (toEl) {
-      const h = document.createElement('div');
-      h.className = 'hch-sq-highlight hch-sq-to';
-      h.style.cssText = `width:100%;height:100%;top:0;left:0;`;
-      toEl.style.position = 'relative';
-      toEl.appendChild(h);
-    }
+    const fromEl = getSquareEl(uci.slice(0,2));
+    const toEl   = getSquareEl(uci.slice(2,4));
+    if (fromEl) { const h=document.createElement('div'); h.className='hch-sq-highlight hch-sq-from'; h.style.cssText='width:100%;height:100%;top:0;left:0;'; fromEl.style.position='relative'; fromEl.appendChild(h); }
+    if (toEl)   { const h=document.createElement('div'); h.className='hch-sq-highlight hch-sq-to';   h.style.cssText='width:100%;height:100%;top:0;left:0;'; toEl.style.position='relative';   toEl.appendChild(h); }
   }
 
   function renderMoves(moves, turn) {
     document.getElementById('hch-turn').innerHTML = turn===playerColor ? `<strong>Your turn!</strong>` : `Opponent's turn...`;
     const el=document.getElementById('hch-moves');
     if(!moves||!moves.length){el.innerHTML='<div class="hch-empty">No moves</div>';clearHighlights();return;}
-
     el.innerHTML=moves.map((m,i)=>{
       const sc=m.score,isMate=sc.includes('Mate')||sc.includes('mate');
       const scClass=isMate?'mat':parseFloat(sc)>0.3?'win':parseFloat(sc)<-0.3?'los':'eq';
@@ -161,130 +131,159 @@
       const n=m.move.slice(0,2)+' → '+m.move.slice(2,4)+(m.move[4]?'='+m.move[4].toUpperCase():'');
       return `<div class="hch-row ${rowClass}" data-uci="${m.move}"><span class="hch-rank">${rank}</span><span class="hch-mv">${n}</span><span class="hch-sc ${scClass}">${sc}</span></div>`;
     }).join('');
-
-    // Highlight best move otomatis
     bestMoveUci = moves[0].move;
     highlightMove(bestMoveUci);
-
-    // Klik row untuk highlight move lain
     document.querySelectorAll('#hch-moves .hch-row').forEach(row => {
-      row.addEventListener('click', () => {
-        const uci = row.getAttribute('data-uci');
-        highlightMove(uci);
-      });
+      row.addEventListener('click', () => highlightMove(row.getAttribute('data-uci')));
     });
-
     const hasMate=moves.some(m=>m.score.includes('Mate'));
     setStatus(hasMate?'☠ Mate found!':turn===playerColor?'Your move! ✓':'Waiting...',hasMate?'mate':'on');
   }
 
-  function getFenFromHistory() {
+  // ── KEY FIX: Returns { fen, turn, parsedCount } ──
+  function parseHistory() {
     if (!window.Chess) return null;
     try {
       const histEl = document.querySelector('[class*="history"]');
       if (!histEl) return null;
       let text = histEl.textContent || '';
-      // Fix castling DULU
-      text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');
-      text = text.replace(/([a-zA-Z][1-8])(\d+\.)/g, '$1 $2');
-      text = text.replace(/([+#!?])(\d+\.)/g, '$1 $2');
 
-      const chess = new Chess();
+      // Fix semua pola nyambung
+      text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');      // castling
+      text = text.replace(/([a-zA-Z][1-8])(\d+\.)/g, '$1 $2');   // e62. → e6 2.
+      text = text.replace(/([+#!?])(\d+\.)/g, '$1 $2');           // Qxf4+16. → Qxf4+ 16.
+      text = text.replace(/([a-h][1-8])([NBRQK])/g, '$1 $2');    // e5Nf6 → e5 Nf6
+
       const tokens = text.split(/\s+/).filter(t =>
-        t.length >= 2 && !t.match(/^\d+\.?$/) && !t.match(/^\d+$/) &&
-        !['Move','History:','No','moves','yet'].includes(t)
+        t.length >= 2 &&
+        !t.match(/^\d+\.?$/) &&
+        !t.match(/^\d+$/) &&
+        !['Move','History:','No','moves','yet','Move History:'].includes(t)
       );
 
-      let moveCount = 0;
+      if (tokens.length === 0) return { fen: null, turn: 'w', parsedCount: 0 };
+
+      const chess = new Chess();
+      let parsedCount = 0;
+
       for (const token of tokens) {
         try {
-          const r = chess.move(token, {sloppy: true});
-          if (r) moveCount++; else break;
+          const r = chess.move(token, { sloppy: true });
+          if (r) parsedCount++;
+          else break;
         } catch(e) { break; }
       }
-      if (moveCount === 0) return null;
-      return chess.fen();
+
+      // Turn ditentukan dari parsedCount yang BERHASIL — bukan total token
+      const turn = parsedCount % 2 === 0 ? 'w' : 'b';
+      const fen = parsedCount > 0 ? chess.fen() : null;
+
+      return { fen, turn, parsedCount, totalTokens: tokens.length };
     } catch(e) { return null; }
   }
 
-  function getFenFromDOM(turn='w') {
+  function getFenFromDOM() {
     const squares = document.querySelectorAll('[data-square]');
     if (!squares.length) return null;
-    const b=Array(8).fill(null).map(()=>Array(8).fill(null));
-    squares.forEach(sq=>{
-      const sqn=sq.getAttribute('data-square');
-      if(!sqn||sqn.length<2) return;
-      const fi=sqn.charCodeAt(0)-97,ri=8-parseInt(sqn[1]);
-      if(fi<0||fi>7||ri<0||ri>7) return;
-      const img=sq.querySelector('img[data-piece]');
-      const pv=img?img.getAttribute('data-piece'):null;
-      if(!pv||pv.length<2) return;
-      b[ri][fi]=pv[0].toLowerCase()+pv[1].toLowerCase();
+    const b = Array(8).fill(null).map(() => Array(8).fill(null));
+    squares.forEach(sq => {
+      const sqn = sq.getAttribute('data-square');
+      if (!sqn || sqn.length < 2) return;
+      const fi = sqn.charCodeAt(0) - 97, ri = 8 - parseInt(sqn[1]);
+      if (fi < 0 || fi > 7 || ri < 0 || ri > 7) return;
+      const img = sq.querySelector('img[data-piece]');
+      const pv = img ? img.getAttribute('data-piece') : null;
+      if (!pv || pv.length < 2) return;
+      b[ri][fi] = pv[0].toLowerCase() + pv[1].toLowerCase();
     });
-    if(!b.some(row=>row.some(c=>c!==null))) return null;
-    let fen='';
-    for(let r=0;r<8;r++){let e=0,row='';for(let f=0;f<8;f++){const p=b[r][f];if(!p){e++;}else{if(e){row+=e;e=0;}row+=p[0]==='w'?p[1].toUpperCase():p[1];}}if(e)row+=e;fen+=row+(r<7?'/':'');}
-    return fen+' '+turn+' KQkq - 0 1';
+    if (!b.some(row => row.some(c => c !== null))) return null;
+    let fen = '';
+    for (let r = 0; r < 8; r++) {
+      let e = 0, row = '';
+      for (let f = 0; f < 8; f++) {
+        const p = b[r][f];
+        if (!p) { e++; }
+        else { if (e) { row += e; e = 0; } row += p[0] === 'w' ? p[1].toUpperCase() : p[1]; }
+      }
+      if (e) row += e;
+      fen += row + (r < 7 ? '/' : '');
+    }
+    return fen;
   }
 
   function detectPosition() {
+    // Auto-detect warna pemain
     const detected = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
     if (detected !== playerColor) {
-      playerColor=detected;
-      document.getElementById('hch-color-lbl').textContent=playerColor==='w'?'White ♔':'Black ♚';
-      currentFen=''; clearHighlights();
+      playerColor = detected;
+      document.getElementById('hch-color-lbl').textContent = playerColor === 'w' ? 'White ♔' : 'Black ♚';
+      currentFen = ''; clearHighlights();
     }
-    const fenHist = getFenFromHistory();
-    if (fenHist) return { fen: fenHist, turn: fenHist.split(' ')[1] };
 
-    const histEl = document.querySelector('[class*="history"]');
-    let text = (histEl?histEl.textContent:'');
-    text = text.replace(/(O-O-O|O-O)(\d+\.)/g, '$1 $2');
-    text = text.replace(/([a-zA-Z][1-8])(\d+\.)/g, '$1 $2');
-    text = text.replace(/([+#!?])(\d+\.)/g, '$1 $2');
-    const tokens = text.split(/\s+/).filter(t=>t.length>=2&&!t.match(/^\d+\.?$/)&&!['Move','History:','No','moves','yet'].includes(t));
-    const turn = tokens.length%2===0?'w':'b';
-    const fen = getFenFromDOM(turn);
-    return fen?{fen,turn}:null;
+    const hist = parseHistory();
+
+    // Kalau parse berhasil penuh atau sebagian
+    if (hist && hist.fen) {
+      return { fen: hist.fen, turn: hist.turn };
+    }
+
+    // Fallback: pakai DOM position + token count untuk turn
+    const domPieces = getFenFromDOM();
+    if (!domPieces) return null;
+
+    // Hitung token count dari history untuk turn fallback
+    let turn = 'w';
+    if (hist) {
+      turn = hist.turn; // Dari parsedCount meski parse tidak sempurna
+    }
+
+    const fen = domPieces + ' ' + turn + ' KQkq - 0 1';
+    return { fen, turn };
   }
 
   async function triggerAnalysis() {
     if (isAnalyzing) return;
+
     const pos = detectPosition();
-    if (!pos) { setStatus('Board not detected','idle'); return; }
+    if (!pos) { setStatus('Board not detected', 'idle'); return; }
+
     const { fen, turn } = pos;
 
+    // Update turn indicator selalu
+    document.getElementById('hch-turn').innerHTML =
+      turn === playerColor ? `<strong>Your turn!</strong>` : `Opponent's turn...`;
+
     if (turn !== playerColor) {
-      setStatus('Opponent thinking...','idle');
-      document.getElementById('hch-turn').innerHTML = `Opponent's turn...`;
+      setStatus('Opponent thinking...', 'idle');
       clearHighlights();
+      // Reset currentFen supaya langsung analisis begitu giliran kita
       currentFen = '';
       return;
     }
 
-    if (fen === currentFen) return;
+    if (fen === currentFen) return; // Sama, skip
     currentFen = fen;
     isAnalyzing = true;
-    setStatus(mode==='mate'?'☠ Hunting...':'Analyzing...','thinking');
+    setStatus(mode === 'mate' ? '☠ Hunting...' : 'Analyzing...', 'thinking');
 
     try {
       const res = await fetch(`${SERVER}/analyze`, {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ fen, movetime: mode==='mate'?600:300, mode })
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fen, movetime: mode === 'mate' ? 800 : 500, mode })
       });
       const data = await res.json();
       renderMoves(data.moves, turn);
     } catch(err) {
-      setStatus('Server error ✗','idle');
+      setStatus('Server error ✗', 'idle');
     } finally {
       isAnalyzing = false;
     }
   }
 
   loadChessJs(() => {
-    setStatus('Connected ✓','on');
-    setInterval(triggerAnalysis, 1000);
-    setTimeout(triggerAnalysis, 500);
+    setStatus('Connected ✓', 'on');
+    setInterval(triggerAnalysis, 800); // Poll lebih cepat
+    setTimeout(triggerAnalysis, 300);
   });
 
   console.log('[HCH] Loaded ✓');
