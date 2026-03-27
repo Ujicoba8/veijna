@@ -357,8 +357,8 @@
     if (turn !== playerColor) {
       setStatus('Opponent thinking...', 'idle');
       clearHighlights();
-      // Simpan posisi saat opponent main — bukan reset, biar deteksi perubahan benar
-      lastDomPieces = domPieces || lastDomPieces;
+      // JANGAN update lastDomPieces di sini!
+      // Kalau disimpan, giliran kita berikutnya pieces-nya sama → skip analisis
       return;
     }
 
