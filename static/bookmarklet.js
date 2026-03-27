@@ -140,7 +140,7 @@
     setStatus(hasMate?'☠ Mate found!':turn===playerColor?'Your move! ✓':'Waiting...',hasMate?'mate':'on');
   }
 
-  // ── KEY FIX: Returns { fen, turn, parsedCount } ──
+  // ── parseHistory: Returns { fen, turn, parsedCount, totalTokens } ──
   function parseHistory() {
     if (!window.Chess) return null;
     try {
@@ -162,16 +162,33 @@
       text = text.replace(/O-O-OO-O/g, 'O-O-O O-O');
       text = text.replace(/O-OO-O/g, 'O-O O-O');
 
-      // Step 3: Split move nyambung — urutan penting!
-      text = text.replace(/([a-h][1-8])([a-h]x)/g, '$1 $2');            // d4exd4 → d4 exd4
-      text = text.replace(/([a-h][1-8])([a-h][1-8])/g, '$1 $2');        // e4c5 → e4 c5
-      text = text.replace(/([a-h][1-8])([NBRQK])/g, '$1 $2');            // e5Nf3 → e5 Nf3
-      text = text.replace(/([NBRQK][a-h][1-8])([a-h][1-8])/g, '$1 $2'); // Nf3e5 → Nf3 e5
-      text = text.replace(/([NBRQK][a-h][1-8])([a-h]x)/g, '$1 $2');     // Nf3exd4 → Nf3 exd4
-      text = text.replace(/([NBRQK][a-h][1-8])([NBRQK])/g, '$1 $2');    // Nf3Nc6 → Nf3 Nc6
-      text = text.replace(/(O-O-O)([a-hNBRQKx])/g, '$1 $2');
-      text = text.replace(/(O-O)([a-hNBRQKx])/g, '$1 $2');
-      text = text.replace(/([+#!?])([a-hNBRQKO])/g, '$1 $2');
+      // Step 3: Split move nyambung — MULTI-PASS sampai stabil
+      // (satu pass tidak cukup untuk kasus bertingkat seperti Nxe5+Bxd7)
+      let prev = '';
+      let passes = 0;
+      while (prev !== text && passes < 10) {
+        prev = text;
+        passes++;
+        // Piece capture (Nxe5, Bxd4, Rxf7, Qxe5) diikuti move apapun
+        text = text.replace(/([NBRQK]x[a-h][1-8][+#]?)([a-hNBRQKO])/g, '$1 $2');
+        // Piece move (Nf3, Bb5) diikuti move apapun
+        text = text.replace(/([NBRQK][a-h][1-8][+#]?)([a-hNBRQKO])/g, '$1 $2');
+        // Pawn capture (exd4, cxd5) diikuti move apapun
+        text = text.replace(/([a-h]x[a-h][1-8][+#=]?[QRBN]?[+#]?)([a-hNBRQKO])/g, '$1 $2');
+        // Square (e4, d5) diikuti capture
+        text = text.replace(/([a-h][1-8][+#]?)([a-h]x)/g, '$1 $2');
+        // Square diikuti square (e4c5)
+        text = text.replace(/([a-h][1-8][+#]?)([a-h][1-8])/g, '$1 $2');
+        // Square diikuti piece (e5Nf3)
+        text = text.replace(/([a-h][1-8][+#]?)([NBRQK])/g, '$1 $2');
+        // Square diikuti castling
+        text = text.replace(/([a-h][1-8][+#]?)(O-O)/g, '$1 $2');
+        // Castling diikuti apapun
+        text = text.replace(/(O-O-O[+#]?)([a-hNBRQKO])/g, '$1 $2');
+        text = text.replace(/(O-O[+#]?)([a-hNBRQKO])/g, '$1 $2');
+        // Setelah check/mate/annotation
+        text = text.replace(/([+#!?])([a-hNBRQKO])/g, '$1 $2');
+      }
 
       const tokens = text.split(/\s+/).filter(t =>
         t.length >= 2 &&
@@ -180,7 +197,9 @@
         !['Move','History:','No','moves','yet','Move History:'].includes(t)
       );
 
-      if (tokens.length === 0) return { fen: null, turn: 'w', parsedCount: 0 };
+      const totalTokens = tokens.length;
+
+      if (totalTokens === 0) return { fen: null, turn: 'w', parsedCount: 0, totalTokens: 0 };
 
       const chess = new Chess();
       let parsedCount = 0;
@@ -193,11 +212,14 @@
         } catch(e) { break; }
       }
 
-      // Turn ditentukan dari parsedCount yang BERHASIL — bukan total token
-      const turn = parsedCount % 2 === 0 ? 'w' : 'b';
+      // ── BUG FIX ──
+      // Turn HARUS dari totalTokens, bukan parsedCount.
+      // Kalau parsing putus di move ke-8 tapi game sudah di move ke-20,
+      // parsedCount=8 → turn salah. totalTokens=20 → turn benar.
+      const turn = totalTokens % 2 === 0 ? 'w' : 'b';
       const fen = parsedCount > 0 ? chess.fen() : null;
 
-      return { fen, turn, parsedCount, totalTokens: tokens.length };
+      return { fen, turn, parsedCount, totalTokens };
     } catch(e) { return null; }
   }
 
@@ -241,20 +263,20 @@
 
     const hist = parseHistory();
 
-    // Kalau parse berhasil penuh atau sebagian
-    if (hist && hist.fen) {
+    // ── BUG FIX ──
+    // Hanya pakai hist.fen kalau parsing PENUH berhasil (parsedCount === totalTokens).
+    // Kalau parsial (putus di tengah), hist.fen adalah posisi lama bukan posisi sekarang!
+    // → wajib fallback ke DOM pieces.
+    if (hist && hist.fen && hist.parsedCount === hist.totalTokens && hist.totalTokens > 0) {
       return { fen: hist.fen, turn: hist.turn };
     }
 
-    // Fallback: pakai DOM position + token count untuk turn
+    // Fallback: pakai posisi dari DOM + turn dari totalTokens
     const domPieces = getFenFromDOM();
     if (!domPieces) return null;
 
-    // Hitung token count dari history untuk turn fallback
-    let turn = 'w';
-    if (hist) {
-      turn = hist.turn; // Dari parsedCount meski parse tidak sempurna
-    }
+    // hist.turn sudah berdasarkan totalTokens (bukan parsedCount) setelah fix di atas
+    const turn = (hist && hist.totalTokens > 0) ? hist.turn : 'w';
 
     const fen = domPieces + ' ' + turn + ' KQkq - 0 1';
     return { fen, turn };
