@@ -2,10 +2,9 @@
 (function () {
   const SERVER = 'https://hustle-chess-helper-production.up.railway.app';
 
-  if (window.__hchLoaded) { console.log('[HCH] Already loaded'); return; }
   window.__hchLoaded = true;
 
-  let currentFen = '';
+  let lastDomPieces = '';
   let playerColor = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
   let isAnalyzing = false;
   let mode = 'normal';
@@ -94,24 +93,17 @@
   let minimized = false;
   document.getElementById('hch-min').onclick = () => { minimized=!minimized; document.getElementById('hch-body').style.display=minimized?'none':'block'; document.getElementById('hch-min').textContent=minimized?'+':'−'; };
   document.getElementById('hch-close').onclick = () => { clearHighlights(); panel.remove(); window.__hchLoaded=false; };
-  document.getElementById('hch-toggle').onclick = () => { playerColor=playerColor==='w'?'b':'w'; document.getElementById('hch-color-lbl').textContent=playerColor==='w'?'White ♔':'Black ♚'; currentFen=''; clearHighlights(); };
-  document.getElementById('hch-force').onclick = () => { currentFen=''; triggerAnalysis(true); };
+  document.getElementById('hch-toggle').onclick = () => { playerColor=playerColor==='w'?'b':'w'; document.getElementById('hch-color-lbl').textContent=playerColor==='w'?'White ♔':'Black ♚'; lastDomPieces=''; clearHighlights(); };
+  document.getElementById('hch-force').onclick = () => { lastDomPieces=''; triggerAnalysis(true); };
   document.getElementById('hch-debug').onclick = () => {
     const hist = parseHistory();
     const dom = getFenFromDOM();
-    console.log('===== [HCH DEBUG REPORT] =====');
-    console.log('playerColor:', playerColor);
-    console.log('currentFen:', currentFen);
-    console.log('parseHistory:', JSON.stringify(hist));
-    console.log('getFenFromDOM pieces:', dom);
     const sq = document.querySelector('[data-square]');
-    console.log('First [data-square] HTML:', sq ? sq.outerHTML.slice(0,500) : 'NOT FOUND');
     const histEl = document.querySelector('[class*="history"]');
-    console.log('History element text:', histEl ? histEl.textContent.slice(0,300) : 'NOT FOUND');
     alert('Debug info dicetak ke Console (F12 → Console tab)');
   };
-  document.getElementById('btn-normal').onclick = () => { mode='normal'; document.getElementById('btn-normal').classList.add('active'); document.getElementById('btn-mate').classList.remove('active'); currentFen=''; };
-  document.getElementById('btn-mate').onclick = () => { mode='mate'; document.getElementById('btn-mate').classList.add('active'); document.getElementById('btn-normal').classList.remove('active'); currentFen=''; };
+  document.getElementById('btn-normal').onclick = () => { mode='normal'; document.getElementById('btn-normal').classList.add('active'); document.getElementById('btn-mate').classList.remove('active'); lastDomPieces=''; };
+  document.getElementById('btn-mate').onclick = () => { mode='mate'; document.getElementById('btn-mate').classList.add('active'); document.getElementById('btn-normal').classList.remove('active'); lastDomPieces=''; };
 
   document.getElementById('hch-head').addEventListener('mousedown', e => {
     let ox=e.clientX-panel.getBoundingClientRect().left, oy=e.clientY-panel.getBoundingClientRect().top;
@@ -165,40 +157,67 @@
     try {
       const histEl = document.querySelector('[class*="history"]');
       if (!histEl) return null;
-      let text = histEl.textContent || '';
+      const rawText = histEl.textContent || '';
 
-      // Step 1: Hapus nomor move yang nyambung ke move sebelumnya (e.g. Nf62. d4exd43.)
+      // ── CARA PALING RELIABLE UNTUK TURN: hitung dari move numbers ──
+      // Cari semua angka "N." dalam teks asli (sebelum parsing apapun)
+      // Ini tidak terpengaruh oleh token splitting yang gagal
+      let turnFromMoveNums = 'w'; // default
+      const rawMoveNums = rawText.match(/\b(\d+)\./g);
+      if (rawMoveNums && rawMoveNums.length > 0) {
+        const maxNum = Math.max(...rawMoveNums.map(n => parseInt(n)));
+        // Cari teks setelah "maxNum." untuk lihat apakah black juga sudah main
+        const lastNumStr = maxNum + '.';
+        const lastNumIdx = rawText.lastIndexOf(lastNumStr);
+        if (lastNumIdx !== -1) {
+          const afterLastNum = rawText.slice(lastNumIdx + lastNumStr.length).trim();
+          // Split dan filter hanya token yang terlihat seperti move
+          const moveLike = afterLastNum.split(/\s+/).filter(t =>
+            t.length >= 2 && /^[a-hNBRQKO]/.test(t)
+          );
+          // Kalau ada 2+ token setelah nomor terakhir → kedua sisi sudah main → white to move
+          // Kalau hanya 1 → white baru saja main → black to move
+          turnFromMoveNums = moveLike.length >= 2 ? 'w' : 'b';
+        }
+      }
+
+      // ── PARSING FEN (untuk posisi, bukan turn) ──
+      let text = rawText;
+
+      // Hapus nomor move yang nyambung ke move (e.g. Nf62. exd43.)
       text = text.replace(/([a-zA-Z][1-8])\d+\./g, '$1 ');
-      text = text.replace(/([+#!?])\d+\./g, '$1 ');
+      text = text.replace(/([+#!?=])\d+\./g, '$1 ');
       text = text.replace(/(O-O-O)\d+\./g, '$1 ');
       text = text.replace(/(O-O)\d+\./g, '$1 ');
-      // Hapus nomor move di awal atau setelah spasi
-      text = text.replace(/^\s*\d+\./g, ' ');
-      text = text.replace(/\s+\d+\./g, ' ');
+      text = text.replace(/\b\d+\.\s*/g, ' ');
 
-      // Step 2: Split double castling (O-OO-O → O-O O-O)
+      // Split double castling
       text = text.replace(/O-O-OO-O-O/g, 'O-O-O O-O-O');
       text = text.replace(/O-O-OO-O/g, 'O-O-O O-O');
       text = text.replace(/O-OO-O/g, 'O-O O-O');
 
-      // Step 3: Split move nyambung — MULTI-PASS sampai stabil
-      // (satu pass tidak cukup untuk kasus bertingkat seperti Nxe5+Bxd7)
+      // Multi-pass splitting sampai stabil
       let prev = '';
       let passes = 0;
-      while (prev !== text && passes < 10) {
+      while (prev !== text && passes < 15) {
         prev = text;
         passes++;
-        // Piece capture (Nxe5, Bxd4, Rxf7, Qxe5) diikuti move apapun
+        // Tambah: piece disambiguasi (Nbd2, R1e1, Qd1e2)
+        text = text.replace(/([NBRQK][a-h\d]x[a-h][1-8][+#]?)([a-hNBRQKO])/g, '$1 $2');
+        text = text.replace(/([NBRQK][a-h\d][a-h][1-8][+#]?)([a-hNBRQKO])/g, '$1 $2');
+        // Piece capture
         text = text.replace(/([NBRQK]x[a-h][1-8][+#]?)([a-hNBRQKO])/g, '$1 $2');
-        // Piece move (Nf3, Bb5) diikuti move apapun
+        // Piece move
         text = text.replace(/([NBRQK][a-h][1-8][+#]?)([a-hNBRQKO])/g, '$1 $2');
-        // Pawn capture (exd4, cxd5) diikuti move apapun
-        text = text.replace(/([a-h]x[a-h][1-8][+#=]?[QRBN]?[+#]?)([a-hNBRQKO])/g, '$1 $2');
-        // Square (e4, d5) diikuti capture
+        // Pawn promotion (e8=Q, exd8=Q)
+        text = text.replace(/(=[QRBN][+#]?)([a-hNBRQKO])/g, '$1 $2');
+        // Pawn capture
+        text = text.replace(/([a-h]x[a-h][1-8](?:=[QRBN])?[+#]?)([a-hNBRQKO])/g, '$1 $2');
+        // Square diikuti capture
         text = text.replace(/([a-h][1-8][+#]?)([a-h]x)/g, '$1 $2');
-        // Square diikuti square (e4c5)
+        // Square diikuti square
         text = text.replace(/([a-h][1-8][+#]?)([a-h][1-8])/g, '$1 $2');
-        // Square diikuti piece (e5Nf3)
+        // Square diikuti piece
         text = text.replace(/([a-h][1-8][+#]?)([NBRQK])/g, '$1 $2');
         // Square diikuti castling
         text = text.replace(/([a-h][1-8][+#]?)(O-O)/g, '$1 $2');
@@ -213,16 +232,14 @@
         t.length >= 2 &&
         !t.match(/^\d+\.?$/) &&
         !t.match(/^\d+$/) &&
-        !['Move','History:','No','moves','yet','Move History:'].includes(t)
+        !['Move','History:','No','moves','yet','Move History:','e.p.'].includes(t)
       );
 
       const totalTokens = tokens.length;
-
-      if (totalTokens === 0) return { fen: null, turn: 'w', parsedCount: 0, totalTokens: 0 };
+      if (totalTokens === 0) return { fen: null, turn: turnFromMoveNums, parsedCount: 0, totalTokens: 0 };
 
       const chess = new Chess();
       let parsedCount = 0;
-
       for (const token of tokens) {
         try {
           const r = chess.move(token, { sloppy: true });
@@ -231,15 +248,13 @@
         } catch(e) { break; }
       }
 
-      // ── BUG FIX ──
-      // Turn HARUS dari totalTokens, bukan parsedCount.
-      // Kalau parsing putus di move ke-8 tapi game sudah di move ke-20,
-      // parsedCount=8 → turn salah. totalTokens=20 → turn benar.
-      const turn = totalTokens % 2 === 0 ? 'w' : 'b';
       const fen = parsedCount > 0 ? chess.fen() : null;
 
-      return { fen, turn, parsedCount, totalTokens };
-    } catch(e) { return null; }
+      // Gunakan turnFromMoveNums (paling reliable), bukan parsedCount/totalTokens
+      return { fen, turn: turnFromMoveNums, parsedCount, totalTokens };
+    } catch(e) {
+      return null;
+    }
   }
 
   // Coba ambil piece value dari berbagai format atribut Hustle Chess
@@ -266,7 +281,6 @@
   function getFenFromDOM() {
     const squares = document.querySelectorAll('[data-square]');
     if (!squares.length) {
-      console.log('[HCH DEBUG] getFenFromDOM: no [data-square] elements found');
       return null;
     }
     const b = Array(8).fill(null).map(() => Array(8).fill(null));
@@ -284,10 +298,8 @@
       if (!pv) pv = getPieceValue(sq);
       if (pv && pv.length >= 2) { b[ri][fi] = pv; pieceCount++; }
     });
-    console.log(`[HCH DEBUG] getFenFromDOM: ${squares.length} squares, ${pieceCount} pieces`);
     if (pieceCount < 2) {
       const sample = squares[0];
-      console.log('[HCH DEBUG] Sample square:', sample ? sample.outerHTML.slice(0, 400) : 'none');
       return null;
     }
     let fen = '';
@@ -301,7 +313,6 @@
       if (e) row += e;
       fen += row + (r < 7 ? '/' : '');
     }
-    console.log('[HCH DEBUG] DOM FEN pieces:', fen);
     return fen;
   }
 
@@ -310,27 +321,26 @@
     if (detected !== playerColor) {
       playerColor = detected;
       document.getElementById('hch-color-lbl').textContent = playerColor === 'w' ? 'White ♔' : 'Black ♚';
-      currentFen = ''; clearHighlights();
+      lastDomPieces = ''; clearHighlights();
     }
 
     const hist = parseHistory();
-    console.log(`[HCH DEBUG] parseHistory → parsedCount=${hist?.parsedCount}, totalTokens=${hist?.totalTokens}, turn=${hist?.turn}, hasFen=${!!hist?.fen}`);
 
+    // Posisi dari history (kalau parse penuh berhasil)
     if (hist && hist.fen && hist.parsedCount === hist.totalTokens && hist.totalTokens > 0) {
-      console.log('[HCH DEBUG] Using HISTORY FEN, turn=', hist.turn);
-      return { fen: hist.fen, turn: hist.turn };
+      const domPieces = hist.fen.split(' ')[0]; // bagian pieces saja
+      return { fen: hist.fen, turn: hist.turn, domPieces };
     }
 
+    // Fallback: posisi dari DOM pieces
     const domPieces = getFenFromDOM();
     if (!domPieces) {
-      console.log('[HCH DEBUG] detectPosition: DOM pieces also null → board not detected');
       return null;
     }
 
-    const turn = (hist && hist.totalTokens > 0) ? hist.turn : 'w';
+    const turn = hist ? hist.turn : 'w';
     const fen = domPieces + ' ' + turn + ' KQkq - 0 1';
-    console.log('[HCH DEBUG] Using DOM FEN, turn=', turn, 'fen=', fen);
-    return { fen, turn };
+    return { fen, turn, domPieces };
   }
 
   async function triggerAnalysis(force = false) {
@@ -339,7 +349,7 @@
     const pos = detectPosition();
     if (!pos) { setStatus('Board not detected', 'idle'); return; }
 
-    const { fen, turn } = pos;
+    const { fen, turn, domPieces } = pos;
 
     document.getElementById('hch-turn').innerHTML =
       turn === playerColor ? `<strong>Your turn!</strong>` : `Opponent's turn...`;
@@ -347,18 +357,22 @@
     if (turn !== playerColor) {
       setStatus('Opponent thinking...', 'idle');
       clearHighlights();
-      currentFen = '';
+      // Simpan posisi saat opponent main — bukan reset, biar deteksi perubahan benar
+      lastDomPieces = domPieces || lastDomPieces;
       return;
     }
 
-    if (!force && fen === currentFen) {
-      console.log('[HCH DEBUG] Same FEN, skip analyze');
+    // Change detection: bandingkan HANYA pieces (bukan full FEN dengan turn)
+    // Ini yang menyebabkan "Same FEN, skip" — turn berubah tapi pieces sama tidak dideteksi
+    const piecesChanged = domPieces && domPieces !== lastDomPieces;
+
+    if (!force && !piecesChanged) {
       return;
     }
-    currentFen = fen;
+
+    lastDomPieces = domPieces || '';
     isAnalyzing = true;
     setStatus(mode === 'mate' ? '☠ Hunting...' : 'Analyzing...', 'thinking');
-    console.log('[HCH DEBUG] Sending FEN to server:', fen);
 
     try {
       const res = await fetch(`${SERVER}/analyze`, {
@@ -366,10 +380,8 @@
         body: JSON.stringify({ fen, movetime: mode === 'mate' ? 800 : 500, mode })
       });
       const data = await res.json();
-      console.log('[HCH DEBUG] Server response:', JSON.stringify(data));
       renderMoves(data.moves, turn);
     } catch(err) {
-      console.log('[HCH DEBUG] Server error:', err.message);
       setStatus('Server error ✗', 'idle');
     } finally {
       isAnalyzing = false;
@@ -382,5 +394,4 @@
     setTimeout(() => triggerAnalysis(false), 300);
   });
 
-  console.log('[HCH] Loaded ✓');
 })();
