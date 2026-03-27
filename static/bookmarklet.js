@@ -84,6 +84,10 @@
         <div class="hch-color-lbl">Playing as: <strong id="hch-color-lbl">${playerColor==='w'?'White ♔':'Black ♚'}</strong></div>
         <button class="hch-toggle" id="hch-toggle">Switch ⇄</button>
       </div>
+      <div style="display:flex;gap:4px;margin-top:6px;">
+        <button class="hch-toggle" id="hch-force" style="flex:1;font-size:10px;padding:3px 4px;">⚡ Force</button>
+        <button class="hch-toggle" id="hch-debug" style="flex:1;font-size:10px;padding:3px 4px;border-color:#888;color:#888;">🔍 Debug</button>
+      </div>
     </div>`;
   document.body.appendChild(panel);
 
@@ -91,6 +95,21 @@
   document.getElementById('hch-min').onclick = () => { minimized=!minimized; document.getElementById('hch-body').style.display=minimized?'none':'block'; document.getElementById('hch-min').textContent=minimized?'+':'−'; };
   document.getElementById('hch-close').onclick = () => { clearHighlights(); panel.remove(); window.__hchLoaded=false; };
   document.getElementById('hch-toggle').onclick = () => { playerColor=playerColor==='w'?'b':'w'; document.getElementById('hch-color-lbl').textContent=playerColor==='w'?'White ♔':'Black ♚'; currentFen=''; clearHighlights(); };
+  document.getElementById('hch-force').onclick = () => { currentFen=''; triggerAnalysis(true); };
+  document.getElementById('hch-debug').onclick = () => {
+    const hist = parseHistory();
+    const dom = getFenFromDOM();
+    console.log('===== [HCH DEBUG REPORT] =====');
+    console.log('playerColor:', playerColor);
+    console.log('currentFen:', currentFen);
+    console.log('parseHistory:', JSON.stringify(hist));
+    console.log('getFenFromDOM pieces:', dom);
+    const sq = document.querySelector('[data-square]');
+    console.log('First [data-square] HTML:', sq ? sq.outerHTML.slice(0,500) : 'NOT FOUND');
+    const histEl = document.querySelector('[class*="history"]');
+    console.log('History element text:', histEl ? histEl.textContent.slice(0,300) : 'NOT FOUND');
+    alert('Debug info dicetak ke Console (F12 → Console tab)');
+  };
   document.getElementById('btn-normal').onclick = () => { mode='normal'; document.getElementById('btn-normal').classList.add('active'); document.getElementById('btn-mate').classList.remove('active'); currentFen=''; };
   document.getElementById('btn-mate').onclick = () => { mode='mate'; document.getElementById('btn-mate').classList.add('active'); document.getElementById('btn-normal').classList.remove('active'); currentFen=''; };
 
@@ -223,21 +242,54 @@
     } catch(e) { return null; }
   }
 
+  // Coba ambil piece value dari berbagai format atribut Hustle Chess
+  function getPieceValue(el) {
+    const dp = el.getAttribute && el.getAttribute('data-piece');
+    if (dp && dp.length >= 2) return dp[0].toLowerCase() + dp[1].toLowerCase();
+    if (el.tagName === 'IMG') {
+      const src = el.src || '';
+      const m = src.match(/[/_-]([wb])([PNBRQK])\./i) || src.match(/([wb])([PNBRQK])\.(?:png|svg|gif|jpg)/i);
+      if (m) return m[1].toLowerCase() + m[2].toLowerCase();
+      const colors = { white:'w', black:'b' };
+      const pieces = { pawn:'p', knight:'n', bishop:'b', rook:'r', queen:'q', king:'k' };
+      const srcL = src.toLowerCase();
+      for (const [cname, cv] of Object.entries(colors))
+        for (const [pname, pv] of Object.entries(pieces))
+          if (srcL.includes(cname) && srcL.includes(pname)) return cv + pv;
+    }
+    const cls = (el.className && typeof el.className === 'string') ? el.className : '';
+    const mc = cls.match(/\b([wb])([PNBRQKpnbrqk])\b/);
+    if (mc) return mc[1].toLowerCase() + mc[2].toLowerCase();
+    return null;
+  }
+
   function getFenFromDOM() {
     const squares = document.querySelectorAll('[data-square]');
-    if (!squares.length) return null;
+    if (!squares.length) {
+      console.log('[HCH DEBUG] getFenFromDOM: no [data-square] elements found');
+      return null;
+    }
     const b = Array(8).fill(null).map(() => Array(8).fill(null));
+    let pieceCount = 0;
     squares.forEach(sq => {
       const sqn = sq.getAttribute('data-square');
       if (!sqn || sqn.length < 2) return;
       const fi = sqn.charCodeAt(0) - 97, ri = 8 - parseInt(sqn[1]);
       if (fi < 0 || fi > 7 || ri < 0 || ri > 7) return;
-      const img = sq.querySelector('img[data-piece]');
-      const pv = img ? img.getAttribute('data-piece') : null;
-      if (!pv || pv.length < 2) return;
-      b[ri][fi] = pv[0].toLowerCase() + pv[1].toLowerCase();
+      let pv = null;
+      for (const child of sq.querySelectorAll('img, [data-piece], [class*="piece"]')) {
+        pv = getPieceValue(child);
+        if (pv) break;
+      }
+      if (!pv) pv = getPieceValue(sq);
+      if (pv && pv.length >= 2) { b[ri][fi] = pv; pieceCount++; }
     });
-    if (!b.some(row => row.some(c => c !== null))) return null;
+    console.log(`[HCH DEBUG] getFenFromDOM: ${squares.length} squares, ${pieceCount} pieces`);
+    if (pieceCount < 2) {
+      const sample = squares[0];
+      console.log('[HCH DEBUG] Sample square:', sample ? sample.outerHTML.slice(0, 400) : 'none');
+      return null;
+    }
     let fen = '';
     for (let r = 0; r < 8; r++) {
       let e = 0, row = '';
@@ -249,11 +301,11 @@
       if (e) row += e;
       fen += row + (r < 7 ? '/' : '');
     }
+    console.log('[HCH DEBUG] DOM FEN pieces:', fen);
     return fen;
   }
 
   function detectPosition() {
-    // Auto-detect warna pemain
     const detected = document.body.innerText.includes('You (Black)') ? 'b' : 'w';
     if (detected !== playerColor) {
       playerColor = detected;
@@ -262,27 +314,26 @@
     }
 
     const hist = parseHistory();
+    console.log(`[HCH DEBUG] parseHistory → parsedCount=${hist?.parsedCount}, totalTokens=${hist?.totalTokens}, turn=${hist?.turn}, hasFen=${!!hist?.fen}`);
 
-    // ── BUG FIX ──
-    // Hanya pakai hist.fen kalau parsing PENUH berhasil (parsedCount === totalTokens).
-    // Kalau parsial (putus di tengah), hist.fen adalah posisi lama bukan posisi sekarang!
-    // → wajib fallback ke DOM pieces.
     if (hist && hist.fen && hist.parsedCount === hist.totalTokens && hist.totalTokens > 0) {
+      console.log('[HCH DEBUG] Using HISTORY FEN, turn=', hist.turn);
       return { fen: hist.fen, turn: hist.turn };
     }
 
-    // Fallback: pakai posisi dari DOM + turn dari totalTokens
     const domPieces = getFenFromDOM();
-    if (!domPieces) return null;
+    if (!domPieces) {
+      console.log('[HCH DEBUG] detectPosition: DOM pieces also null → board not detected');
+      return null;
+    }
 
-    // hist.turn sudah berdasarkan totalTokens (bukan parsedCount) setelah fix di atas
     const turn = (hist && hist.totalTokens > 0) ? hist.turn : 'w';
-
     const fen = domPieces + ' ' + turn + ' KQkq - 0 1';
+    console.log('[HCH DEBUG] Using DOM FEN, turn=', turn, 'fen=', fen);
     return { fen, turn };
   }
 
-  async function triggerAnalysis() {
+  async function triggerAnalysis(force = false) {
     if (isAnalyzing) return;
 
     const pos = detectPosition();
@@ -290,22 +341,24 @@
 
     const { fen, turn } = pos;
 
-    // Update turn indicator selalu
     document.getElementById('hch-turn').innerHTML =
       turn === playerColor ? `<strong>Your turn!</strong>` : `Opponent's turn...`;
 
     if (turn !== playerColor) {
       setStatus('Opponent thinking...', 'idle');
       clearHighlights();
-      // Reset currentFen supaya langsung analisis begitu giliran kita
       currentFen = '';
       return;
     }
 
-    if (fen === currentFen) return; // Sama, skip
+    if (!force && fen === currentFen) {
+      console.log('[HCH DEBUG] Same FEN, skip analyze');
+      return;
+    }
     currentFen = fen;
     isAnalyzing = true;
     setStatus(mode === 'mate' ? '☠ Hunting...' : 'Analyzing...', 'thinking');
+    console.log('[HCH DEBUG] Sending FEN to server:', fen);
 
     try {
       const res = await fetch(`${SERVER}/analyze`, {
@@ -313,8 +366,10 @@
         body: JSON.stringify({ fen, movetime: mode === 'mate' ? 800 : 500, mode })
       });
       const data = await res.json();
+      console.log('[HCH DEBUG] Server response:', JSON.stringify(data));
       renderMoves(data.moves, turn);
     } catch(err) {
+      console.log('[HCH DEBUG] Server error:', err.message);
       setStatus('Server error ✗', 'idle');
     } finally {
       isAnalyzing = false;
@@ -323,8 +378,8 @@
 
   loadChessJs(() => {
     setStatus('Connected ✓', 'on');
-    setInterval(triggerAnalysis, 800); // Poll lebih cepat
-    setTimeout(triggerAnalysis, 300);
+    setInterval(() => triggerAnalysis(false), 800);
+    setTimeout(() => triggerAnalysis(false), 300);
   });
 
   console.log('[HCH] Loaded ✓');
