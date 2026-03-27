@@ -330,7 +330,7 @@
     const hist = parseHistory();
 
     // Posisi dari history (kalau parse penuh berhasil)
-    if (hist && hist.fen && hist.parsedCount === hist.totalTokens && hist.totalTokens > 0) {
+    if (hist && hist.fen && hist.parsedCount > 0) {
       const domPieces = hist.fen.split(' ')[0]; // bagian pieces saja
       return { fen: hist.fen, turn: hist.turn, domPieces };
     }
