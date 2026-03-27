@@ -250,8 +250,11 @@
 
       const fen = parsedCount > 0 ? chess.fen() : null;
 
-      // Gunakan turnFromMoveNums (paling reliable), bukan parsedCount/totalTokens
-      return { fen, turn: turnFromMoveNums, parsedCount, totalTokens };
+      // chess.turn() adalah sumber paling akurat — langsung dari state chess.js
+      // turnFromMoveNums hanya fallback kalau parsing gagal total (parsedCount=0)
+      const turn = parsedCount > 0 ? chess.turn() : turnFromMoveNums;
+
+      return { fen, turn, parsedCount, totalTokens };
     } catch(e) {
       return null;
     }
