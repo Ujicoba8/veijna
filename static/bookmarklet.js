@@ -160,23 +160,22 @@
       const rawText = histEl.textContent || '';
 
       // ── CARA PALING RELIABLE UNTUK TURN: hitung dari move numbers ──
-      // Cari semua angka "N." dalam teks asli (sebelum parsing apapun)
-      // Ini tidak terpengaruh oleh token splitting yang gagal
+      // Gunakan (\d+)\. tanpa \b karena angka mungkin nyambung ke huruf di teks concatenated
       let turnFromMoveNums = 'w'; // default
-      const rawMoveNums = rawText.match(/\b(\d+)\./g);
+      const rawMoveNums = rawText.match(/(\d+)\./g);
       if (rawMoveNums && rawMoveNums.length > 0) {
         const maxNum = Math.max(...rawMoveNums.map(n => parseInt(n)));
-        // Cari teks setelah "maxNum." untuk lihat apakah black juga sudah main
         const lastNumStr = maxNum + '.';
         const lastNumIdx = rawText.lastIndexOf(lastNumStr);
         if (lastNumIdx !== -1) {
-          const afterLastNum = rawText.slice(lastNumIdx + lastNumStr.length).trim();
-          // Split dan filter hanya token yang terlihat seperti move
-          const moveLike = afterLastNum.split(/\s+/).filter(t =>
-            t.length >= 2 && /^[a-hNBRQKO]/.test(t)
+          // Ambil teks setelah nomor terakhir, token-split dengan regex (bukan whitespace!)
+          let afterLast = rawText.slice(lastNumIdx + lastNumStr.length).trim();
+          afterLast = afterLast.replace(/(O-O-O|O-O)/g, ' $1 ');
+          afterLast = afterLast.replace(/([NBRQK][a-h\d]?[a-h][1-8])/g, ' $1 ');
+          afterLast = afterLast.replace(/([a-h]x?[a-h]?[1-8])/g, ' $1 ');
+          const moveLike = afterLast.split(/\s+/).filter(t =>
+            t.length >= 2 && /^[a-hNBRQKO]/.test(t) && !t.match(/^\d/)
           );
-          // Kalau ada 2+ token setelah nomor terakhir → kedua sisi sudah main → white to move
-          // Kalau hanya 1 → white baru saja main → black to move
           turnFromMoveNums = moveLike.length >= 2 ? 'w' : 'b';
         }
       }
@@ -185,11 +184,13 @@
       let text = rawText;
 
       // Hapus nomor move yang nyambung ke move (e.g. Nf62. exd43.)
-      text = text.replace(/([a-zA-Z][1-8])\d+\./g, '$1 ');
-      text = text.replace(/([+#!?=])\d+\./g, '$1 ');
+      // PENTING: castling HARUS duluan sebelum pattern [a-zA-Z][1-8]
+      // karena O-O11. → pattern umum akan match "O11." → jadi "O1" (rusak!)
       text = text.replace(/(O-O-O)\d+\./g, '$1 ');
       text = text.replace(/(O-O)\d+\./g, '$1 ');
-      text = text.replace(/\b\d+\.\s*/g, ' ');
+      text = text.replace(/([a-zA-Z][1-8])\d+\./g, '$1 ');
+      text = text.replace(/([+#!?=])\d+\./g, '$1 ');
+      text = text.replace(/\d+\.\s*/g, ' ');
 
       // Split double castling
       text = text.replace(/O-O-OO-O-O/g, 'O-O-O O-O-O');
